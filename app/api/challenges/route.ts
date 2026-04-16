@@ -7,6 +7,8 @@ import { addHours, addDays } from 'date-fns'
 import type { TicketType } from '@/types'
 import { logChallengeEvent } from '@/lib/challenges/events'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()

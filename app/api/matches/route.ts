@@ -5,6 +5,8 @@ import { addMinutes } from 'date-fns'
 import { createNotification } from '@/lib/notifications/service'
 import { logChallengeEvent } from '@/lib/challenges/events'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

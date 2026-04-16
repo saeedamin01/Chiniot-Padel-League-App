@@ -29,7 +29,7 @@ export default function PlayerLayout({ children }: { children: React.ReactNode }
         if (!authUser) { router.push('/login'); return }
 
         const [profileRes, seasonRes] = await Promise.all([
-          supabase.from('players').select('id, email, name, avatar_url, is_admin, email_verified').eq('id', authUser.id).single(),
+          supabase.from('players').select('id, email, name, avatar_url, is_admin, is_active, email_verified').eq('id', authUser.id).single(),
           supabase.from('seasons').select('id').eq('is_active', true).single(),
         ])
 
@@ -37,6 +37,13 @@ export default function PlayerLayout({ children }: { children: React.ReactNode }
           // Orphaned auth user (no player profile) — sign out and send to login
           await supabase.auth.signOut()
           router.push('/login?error=no_profile')
+          return
+        }
+
+        // Gate: suspended players cannot access the app
+        if (profileRes.data.is_active === false) {
+          await supabase.auth.signOut()
+          router.push('/login?error=suspended')
           return
         }
 

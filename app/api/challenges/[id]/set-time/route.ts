@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { addHours } from 'date-fns'
 import { logChallengeEvent } from '@/lib/challenges/events'
 
+export const dynamic = 'force-dynamic'
+
 // POST /api/challenges/[id]/set-time
 //
 // Either team can enter the agreed match time when status is 'accepted_open'.

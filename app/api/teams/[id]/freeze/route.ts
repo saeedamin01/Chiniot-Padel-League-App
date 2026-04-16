@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getActiveSeason } from '@/lib/ladder/engine'
 import { addDays } from 'date-fns'
 
+export const dynamic = 'force-dynamic'
+
 const ACTIVE_CHALLENGE_STATUSES = [
   'pending', 'accepted', 'accepted_open', 'time_pending_confirm',
   'reschedule_requested', 'reschedule_pending_admin', 'revision_proposed', 'scheduled',

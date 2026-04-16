@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 // GET /api/admin/tickets?seasonId=xxx
 // Returns all tickets for the season with team info
 export async function GET(request: NextRequest) {

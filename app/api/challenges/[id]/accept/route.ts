@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { addHours } from 'date-fns'
 import { logChallengeEvent } from '@/lib/challenges/events'
 
+export const dynamic = 'force-dynamic'
+
 // POST /api/challenges/[id]/accept
 //
 // Two acceptance modes for the CHALLENGED team:

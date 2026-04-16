@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { sendEmail, accountCreatedEmail } from '@/lib/email/mailer'
 import { randomBytes } from 'crypto'
 
+export const dynamic = 'force-dynamic'
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function generateTempPassword(): string {

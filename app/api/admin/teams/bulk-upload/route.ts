@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 // POST /api/admin/teams/bulk-upload
 // Validates and creates multiple teams from a CSV upload.
 // Each row: { teamName, player1Email, player2Email, rank, ticket1?, ticket2? }

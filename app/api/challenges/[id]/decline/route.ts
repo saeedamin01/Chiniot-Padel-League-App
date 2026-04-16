@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { processForfeit } from '@/lib/ladder/engine'
 import { logChallengeEvent } from '@/lib/challenges/events'
 
+export const dynamic = 'force-dynamic'
+
 // Declining a challenge = forfeit with rank penalty for the declining (challenged) team
 export async function POST(
   request: NextRequest,

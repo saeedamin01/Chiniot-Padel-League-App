@@ -3,6 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { processForfeit } from '@/lib/ladder/engine'
 
+export const dynamic = 'force-dynamic'
+
 // Challenging team confirms or rejects the proposed revised slot
 export async function POST(
   request: NextRequest,

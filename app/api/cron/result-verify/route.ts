@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { processMatchResult } from '@/lib/ladder/engine'
 import { logChallengeEvent } from '@/lib/challenges/events'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
   try {
     // Verify cron secret

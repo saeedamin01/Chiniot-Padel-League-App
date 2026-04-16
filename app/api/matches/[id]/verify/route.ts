@@ -5,6 +5,8 @@ import { processMatchResult } from '@/lib/ladder/engine'
 import { createNotification } from '@/lib/notifications/service'
 import { logChallengeEvent } from '@/lib/challenges/events'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }

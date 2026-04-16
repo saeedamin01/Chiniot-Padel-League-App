@@ -5,6 +5,8 @@ import { processForfeit } from '@/lib/ladder/engine'
 import { logChallengeEvent } from '@/lib/challenges/events'
 import { notifyAdmins } from '@/lib/notifications/service'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }

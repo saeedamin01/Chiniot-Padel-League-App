@@ -1,12 +1,12 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { CheckCircle2, XCircle, Loader2, Mail } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
-export default function VerifyEmailPage() {
+function VerifyEmailContent() {
   const searchParams = useSearchParams()
   const router       = useRouter()
 
@@ -84,5 +84,17 @@ export default function VerifyEmailPage() {
       </div>
       <Link href="/login"><Button variant="outline" className="w-full border-slate-600 text-slate-300">Back to Sign In</Button></Link>
     </div>
+  )
+}
+
+export default function VerifyEmailPage() {
+  return (
+    <Suspense fallback={
+      <div className="bg-slate-800/60 backdrop-blur border border-slate-700/50 rounded-2xl p-8 shadow-2xl text-center">
+        <Loader2 className="h-10 w-10 text-emerald-400 mx-auto animate-spin" />
+      </div>
+    }>
+      <VerifyEmailContent />
+    </Suspense>
   )
 }

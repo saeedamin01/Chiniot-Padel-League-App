@@ -3,6 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { logChallengeEvent } from '@/lib/challenges/events'
 
+export const dynamic = 'force-dynamic'
+
 // POST /api/challenges/[id]/reschedule
 //
 // Either team on a SCHEDULED challenge can propose a new time and/or venue.

@@ -257,70 +257,10 @@ services:
         limits:
           memory: 64M
 
-  # ── Studio (admin UI — expose locally via SSH tunnel, not publicly) ──────────
-  # Kept here but NOT exposed on a public port for security.
-  # Access via:  ssh -L 3001:localhost:3001 root@YOUR_SERVER_IP
-  supabase-studio:
-    image: supabase/studio:2025.01.13-sha-f1a3b78
-    <<: *restart
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/profile').then(r => { if (r.status !== 200) throw new Error(r.status) })"]
-      interval: 5s
-      timeout: 5s
-      retries: 3
-    depends_on:
-      supabase-analytics:
-        condition: service_healthy
-    environment:
-      STUDIO_PG_META_URL: http://supabase-meta:8080
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      DEFAULT_ORGANIZATION_NAME: ${STUDIO_DEFAULT_ORGANIZATION:-CPL}
-      DEFAULT_PROJECT_NAME: ${STUDIO_DEFAULT_PROJECT:-Chiniot Padel League}
-      SUPABASE_URL: http://supabase-kong:8000
-      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
-      SUPABASE_ANON_KEY: ${ANON_KEY}
-      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
-      AUTH_JWT_SECRET: ${JWT_SECRET}
-      LOGFLARE_API_KEY: ${LOGFLARE_API_KEY:-your-api-key}
-      LOGFLARE_URL: http://supabase-analytics:4000
-      NEXT_PUBLIC_ENABLE_LOGS: "true"
-      NEXT_ANALYTICS_BACKEND_PROVIDER: postgres
-    ports:
-      - "127.0.0.1:3001:3000"   # Only on loopback — never public
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-
-  # ── Analytics (needed by Studio) ────────────────────────────────────────────
-  supabase-analytics:
-    image: supabase/logflare:1.4.0
-    <<: *restart
-    healthcheck:
-      test: ["CMD", "curl", "http://localhost:4000/health"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    depends_on:
-      supabase-db:
-        condition: service_healthy
-    environment:
-      LOGFLARE_NODE_HOST: 127.0.0.1
-      DB_USERNAME: supabase_admin
-      DB_DATABASE: _supabase
-      DB_HOSTNAME: supabase-db
-      DB_PORT: ${POSTGRES_PORT:-5432}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
-      DB_SCHEMA: _analytics
-      LOGFLARE_API_KEY: ${LOGFLARE_API_KEY:-your-api-key}
-      LOGFLARE_SINGLE_TENANT: "true"
-      LOGFLARE_SUPABASE_MODE: "true"
-      LOGFLARE_MIN_CLUSTER_SIZE: 1
-      RELEASE_COOKIE: cookie
-    deploy:
-      resources:
-        limits:
-          memory: 256M
+  # ── Studio & Analytics: disabled on 4 GB server to save ~500 MB RAM ──────────
+  # To access Studio locally, add it back and tunnel:
+  #   ssh -L 3001:localhost:3001 root@YOUR_SERVER_IP
+  # then open http://localhost:3001 in your browser.
 
 volumes:
   supabase-db-data:

@@ -1,6 +1,8 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 // GET /api/auth/verify-email?token=<hex-token>
 // Called when a player clicks the verification link in their welcome email.
 // Marks email_verified = true and clears the token.

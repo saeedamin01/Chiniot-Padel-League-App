@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 // PATCH /api/venues/[id]  — update a venue (admin only)
 // DELETE /api/venues/[id] — soft-delete (set is_active=false) (admin only)
 

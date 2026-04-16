@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { logChallengeEvent } from '@/lib/challenges/events'
 import { notifyAdmins } from '@/lib/notifications/service'
 
+export const dynamic = 'force-dynamic'
+
 // POST /api/challenges/[id]/reschedule/confirm
 //
 // Called by the OTHER team (not who requested the reschedule) to either
