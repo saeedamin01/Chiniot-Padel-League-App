@@ -1,0 +1,18 @@
+-- =============================================
+-- CPL SEED DATA — Local Development
+-- =============================================
+-- Users are created via the Admin API script.
+-- Run: node scripts/seed-users.js
+--
+-- Admin:  admin@cpl.com  / Admin@cpl2026
+-- Player: player@cpl.com / Player@cpl2026
+-- =============================================
+
+-- This file is intentionally minimal.
+-- The migration (001_initial_schema.sql) already seeds:
+--   - Season 3 (active)
+--   - 5 tiers (Diamond, Platinum, Gold, Silver, Bronze)
+--   - Default league_settings
+--
+-- Auth users and player profiles are created by running:
+--   node scripts/seed-users.js

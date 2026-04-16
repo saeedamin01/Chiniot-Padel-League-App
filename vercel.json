@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/challenge-forfeit",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/freeze-drops",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/result-verify",
+      "schedule": "*/15 * * * *"
+    }
+  ]
+}
