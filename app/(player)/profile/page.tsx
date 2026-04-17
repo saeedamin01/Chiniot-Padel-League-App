@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { Player, Team, LadderPosition, Tier } from '@/types'
+import { PushNotificationToggle } from '@/components/PushNotificationToggle'
 
 interface TeamWithStats extends Team {
   ladder_position?: LadderPosition & { tier?: Tier }
@@ -500,6 +501,7 @@ export default function ProfilePage() {
                   {profile.is_active ? 'Active' : 'Inactive'}
                 </span>
               </div>
+              <PushNotificationToggle />
             </div>
           </Card>
         </TabsContent>
