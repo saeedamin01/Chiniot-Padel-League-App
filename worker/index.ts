@@ -1,8 +1,10 @@
-/// <reference lib="webworker" />
-export type {}
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// Service-worker custom code — compiled by @ducanh2912/next-pwa into sw.js
+// We cast events explicitly because tsconfig includes lib.dom which conflicts
+// with the webworker types for `self`.
 
 // ─── Push notification received ──────────────────────────────────────────────
-self.addEventListener('push', (event) => {
+self.addEventListener('push', (event: any) => {
   if (!event.data) return
 
   let payload: {
@@ -19,31 +21,29 @@ self.addEventListener('push', (event) => {
     payload = { title: 'CPL', body: event.data.text() }
   }
 
-  const title = payload.title ?? 'Chiniot Padel League'
-  const options: NotificationOptions = {
+  const title   = payload.title ?? 'Chiniot Padel League'
+  const options = {
     body:    payload.body ?? '',
     icon:    payload.icon ?? '/icons/icon-192.svg',
     badge:   '/icons/icon-192.svg',
     tag:     payload.tag ?? 'cpl-notification',
     data:    { url: payload.url ?? '/' },
-    // @ts-expect-error — vibrate is valid but not in all TS lib types
     vibrate: [200, 100, 200],
   }
 
-  event.waitUntil(self.registration.showNotification(title, options))
+  event.waitUntil((self as any).registration.showNotification(title, options))
 })
 
 // ─── Notification clicked ─────────────────────────────────────────────────────
-self.addEventListener('notificationclick', (event) => {
+self.addEventListener('notificationclick', (event: any) => {
   event.notification.close()
 
   const targetUrl: string = event.notification.data?.url ?? '/'
 
   event.waitUntil(
-    self.clients
+    (self as any).clients
       .matchAll({ type: 'window', includeUncontrolled: true })
-      .then((clientList) => {
-        // If app is already open, focus it and navigate
+      .then((clientList: any[]) => {
         for (const client of clientList) {
           if ('focus' in client) {
             client.focus()
@@ -51,8 +51,7 @@ self.addEventListener('notificationclick', (event) => {
             return
           }
         }
-        // Otherwise open a new window
-        return self.clients.openWindow(targetUrl)
+        return (self as any).clients.openWindow(targetUrl)
       })
   )
 })
