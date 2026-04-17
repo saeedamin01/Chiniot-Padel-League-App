@@ -240,6 +240,37 @@ html:not(.dark) .sticky.top-0 {
 html:not(.dark) ::placeholder { color: hsl(215 14% 62%) !important; }
 
 /* ─────────────────────────────────────────────────────────────────────────────
+   PWA / iOS SAFE AREA SUPPORT
+   viewportFit: 'cover' is set in layout.tsx so the app extends edge-to-edge.
+   These utilities push content away from the Dynamic Island, notch, and home
+   indicator using the env() safe-area-inset-* CSS environment variables.
+───────────────────────────────────────────────────────────────────────────── */
+
+/* Top navbar: sits below Dynamic Island / notch */
+.pwa-header {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Bottom nav: sits above the home indicator */
+.pwa-bottom-nav {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Main content: leave room for the fixed top header + bottom nav on mobile */
+.pwa-main {
+  /* 56px header + safe-area-top on mobile, then 64px bottom nav + safe-area-bottom */
+  padding-top: calc(3.5rem + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+}
+@media (min-width: 768px) {
+  /* Desktop: standard top navbar (already inside flow), no bottom nav */
+  .pwa-main {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
    CUSTOM UTILITIES  (unchanged between themes)
 ───────────────────────────────────────────────────────────────────────────── */
 @layer utilities {

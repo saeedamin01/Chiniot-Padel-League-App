@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Navbar } from '@/components/layout/Navbar'
+import { BottomNav } from '@/components/layout/BottomNav'
 import { createClient } from '@/lib/supabase/client'
 import { TeamProvider } from '@/context/TeamContext'
 import { toast } from 'sonner'
@@ -101,7 +102,12 @@ export default function PlayerLayout({ children }: { children: React.ReactNode }
           onLogout={handleLogout}
         />
       )}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">{children}</main>
+      {/* pwa-main handles safe-area padding on mobile, regular py-8 on desktop */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pwa-main">
+        {children}
+      </main>
+      {/* Bottom tab navigation — mobile only, replaces hamburger menu */}
+      <BottomNav />
     </div>
   )
 
