@@ -58,6 +58,11 @@ export function PushNotificationToggle() {
   const handleEnable = async () => {
     setState('loading')
     try {
+      if (!VAPID_PUBLIC_KEY) {
+        setState('unsubscribed')
+        toast.error('Push not configured — contact admin.')
+        return
+      }
       const permission = await Notification.requestPermission()
       if (permission !== 'granted') {
         setState('denied')
@@ -70,14 +75,14 @@ export function PushNotificationToggle() {
         applicationServerKey: VAPID_PUBLIC_KEY,
       })
       await saveToDB(sub)
-      // Clear the "not now" flag so the banner won't be permanently hidden
       localStorage.removeItem(DISMISSED_KEY)
       setState('subscribed')
       toast.success('Push notifications enabled!')
     } catch (err) {
       console.error(err)
       setState('unsubscribed')
-      toast.error('Could not enable notifications.')
+      const msg = err instanceof Error ? err.message : String(err)
+      toast.error(`Could not enable: ${msg}`)
     }
   }
 

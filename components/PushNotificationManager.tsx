@@ -84,9 +84,14 @@ export function PushNotificationManager() {
   const handleEnable = async () => {
     setLoading(true)
     try {
+      if (!VAPID_PUBLIC_KEY) {
+        toast.error('Push not configured — contact admin.')
+        setShowBanner(false)
+        return
+      }
       const permission = await Notification.requestPermission()
       if (permission !== 'granted') {
-        toast.error('Notifications blocked. Enable them in your browser settings.')
+        toast.error('Notifications blocked. Enable them in your device settings.')
         setShowBanner(false)
         localStorage.setItem(DISMISSED_KEY, '1')
         return
@@ -97,11 +102,13 @@ export function PushNotificationManager() {
         applicationServerKey: VAPID_PUBLIC_KEY,
       })
       await saveToDB(sub)
+      localStorage.removeItem(DISMISSED_KEY)
       toast.success('Push notifications enabled!')
       setShowBanner(false)
     } catch (err) {
       console.error('Push subscribe error:', err)
-      toast.error('Could not enable notifications')
+      const msg = err instanceof Error ? err.message : String(err)
+      toast.error(`Could not enable: ${msg}`)
     } finally {
       setLoading(false)
     }
