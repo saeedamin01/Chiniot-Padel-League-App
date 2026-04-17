@@ -257,8 +257,25 @@ export default function PlayersPage() {
     const data = await res.json()
     toast[res.ok ? 'success' : 'error'](res.ok ? `Password reset sent to ${email}` : (data.error || 'Failed'))
   }
-  async function handleSuspend(id: string)   { if (!confirm('Suspend this account?')) return; await supabase.from('players').update({ is_active: false }).eq('id', id); loadPlayers() }
-  async function handleUnsuspend(id: string) { await supabase.from('players').update({ is_active: true  }).eq('id', id); loadPlayers() }
+  async function handleSuspend(id: string) {
+    if (!confirm('Suspend this account? The player will be blocked from logging in.')) return
+    const res = await fetch(`/api/admin/players/${id}/suspend`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active: false }),
+    })
+    toast[res.ok ? 'success' : 'error'](res.ok ? 'Player suspended' : 'Failed to suspend player')
+    loadPlayers()
+  }
+  async function handleUnsuspend(id: string) {
+    const res = await fetch(`/api/admin/players/${id}/suspend`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active: true }),
+    })
+    toast[res.ok ? 'success' : 'error'](res.ok ? 'Player reactivated' : 'Failed to reactivate player')
+    loadPlayers()
+  }
 
   const filtered = players.filter(p => {
     const q = searchTerm.toLowerCase()
