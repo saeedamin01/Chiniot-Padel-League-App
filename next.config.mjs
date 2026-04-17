@@ -8,6 +8,8 @@ const withPWA = withPWAInit({
   cacheOnFrontEndNav: true,
   aggressiveFrontEndNavCaching: true,
   reloadOnOnline: true,
+  // Merge our custom push/notificationclick handlers into the generated SW
+  customWorkerSrc: 'worker',
   workboxOptions: {
     disableDevLogs: true,
   },

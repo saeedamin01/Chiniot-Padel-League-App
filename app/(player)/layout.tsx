@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Navbar } from '@/components/layout/Navbar'
 import { BottomNav } from '@/components/layout/BottomNav'
+import { PushNotificationManager } from '@/components/PushNotificationManager'
 import { createClient } from '@/lib/supabase/client'
 import { TeamProvider } from '@/context/TeamContext'
 import { toast } from 'sonner'
@@ -108,6 +109,8 @@ export default function PlayerLayout({ children }: { children: React.ReactNode }
       </main>
       {/* Bottom tab navigation — mobile only, replaces hamburger menu */}
       <BottomNav />
+      {/* Silently subscribe to push notifications after login */}
+      <PushNotificationManager />
     </div>
   )
 
