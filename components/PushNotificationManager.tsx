@@ -5,13 +5,6 @@ import { toast } from 'sonner'
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? ''
 
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
-  const raw = atob(base64)
-  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)))
-}
-
 /**
  * Silently subscribes the logged-in player to Web Push after a brief delay.
  * - Does nothing if notifications are denied or already subscribed.
@@ -51,7 +44,7 @@ export function PushNotificationManager() {
         // Subscribe with our VAPID public key
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+          applicationServerKey: VAPID_PUBLIC_KEY, // base64url string accepted directly
         })
 
         await saveToDB(subscription)
