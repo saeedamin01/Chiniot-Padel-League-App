@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { User, Mail, Phone, Lock, Loader2, Trophy, Shield, AlertCircle } from 'lucide-react'
+import { User, Mail, Phone, Lock, Loader2, Trophy, Shield, AlertCircle, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -504,6 +504,19 @@ export default function ProfilePage() {
               <PushNotificationToggle />
             </div>
           </Card>
+
+          {/* Sign Out */}
+          <button
+            onClick={async () => {
+              const supabase = createClient()
+              await supabase.auth.signOut()
+              router.push('/login')
+            }}
+            className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors text-sm font-medium"
+          >
+            <LogOut className="h-4 w-4" />
+            Sign out
+          </button>
         </TabsContent>
 
         {/* Teams */}
