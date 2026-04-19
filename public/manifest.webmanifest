@@ -2,7 +2,7 @@
   "name": "Chiniot Padel League",
   "short_name": "CPL",
   "description": "Official ladder management system for Chiniot Padel League",
-  "start_url": "/",
+  "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",

@@ -75,6 +75,13 @@ export default function LandingPage() {
 
   const supabase = createClient()
 
+  // ── Auto-redirect logged-in users to the dashboard ──────────────────────────
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) window.location.replace('/dashboard')
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     setMounted(true)
     const emojis = Array.from({ length: 15 }, (_, i) => ({
