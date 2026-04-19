@@ -214,10 +214,13 @@ export async function canChallenge(
     return { allowed: false, reason: 'You already have an active outgoing challenge' }
   }
 
-  // Challenged team must also be available — they can't already be in a challenge
-  const { outgoing: targetOut, incoming: targetIn } = await getTeamActiveChallenge(challengedTeamId, seasonId)
-  if (targetOut || targetIn) {
-    return { allowed: false, reason: 'That team is already in an active challenge and cannot be challenged right now' }
+  // Challenged team can be challenged as long as they haven't already ACCEPTED an incoming challenge.
+  // Rule: a team can receive multiple pending challenges simultaneously — accepting one dissolves the others.
+  // Rule: a team's own outgoing challenge (to someone above them) does NOT prevent them being challenged from below.
+  const { incoming: targetIn } = await getTeamActiveChallenge(challengedTeamId, seasonId)
+  const acceptedIncomingStatuses = ['accepted', 'accepted_open', 'time_pending_confirm', 'reschedule_requested', 'reschedule_pending_admin', 'revision_proposed', 'scheduled']
+  if (targetIn && acceptedIncomingStatuses.includes(targetIn.status)) {
+    return { allowed: false, reason: 'That team has already accepted a challenge and cannot receive another right now' }
   }
 
   // ── Player overlap (shared player between teams) ───────────────────────────
