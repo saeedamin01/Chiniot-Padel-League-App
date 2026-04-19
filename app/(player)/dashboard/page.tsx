@@ -131,6 +131,14 @@ export default function DashboardPage() {
   type OppStats = { wins: number; losses: number; played: number; recentForm: ('W' | 'L')[]; winStreak: number }
   const [opponentStatsMap, setOpponentStatsMap] = useState<Map<string, OppStats>>(new Map())
 
+  // My team's season form
+  const [myRecentForm, setMyRecentForm] = useState<('W' | 'L')[]>([])
+  const [myWinStreak, setMyWinStreak] = useState(0)
+
+  // Opponent's other scheduled matches: opponentTeamId → their other scheduled challenges
+  type OppMatch = { id: string; challenge_code: string; confirmed_time: string | null; accepted_slot: string | null; match_date: string | null; challenging_team_id: string; challenged_team_id: string; challenging_team: { id: string; name: string }; challenged_team: { id: string; name: string } }
+  const [oppScheduledMap, setOppScheduledMap] = useState<Map<string, OppMatch[]>>(new Map())
+
   // ── Fetch challenges for selected team ──────────────────────────────────────
   const fetchChallenges = useCallback(async (teamId: string, sid: string) => {
     const { data } = await supabase
@@ -207,6 +215,37 @@ export default function DashboardPage() {
       s.winStreak = streak
     }
     setOpponentStatsMap(statsMap)
+
+    // My team's own form + streak
+    const myS = statsMap.get(teamId)
+    setMyRecentForm(myS?.recentForm ?? [])
+    setMyWinStreak(myS?.winStreak ?? 0)
+
+    // Fetch opponent's OTHER scheduled matches (not against my team)
+    const myScheduled = (data || []).filter(c => c.status === 'scheduled')
+    const oppIds = [...new Set(myScheduled.map(c =>
+      c.challenging_team_id === teamId ? c.challenged_team_id : c.challenging_team_id
+    ))]
+    if (oppIds.length > 0) {
+      const { data: oppSched } = await supabase
+        .from('challenges')
+        .select(`id, challenge_code, confirmed_time, accepted_slot, match_date, challenging_team_id, challenged_team_id,
+          challenging_team:teams!challenging_team_id(id, name),
+          challenged_team:teams!challenged_team_id(id, name)`)
+        .eq('season_id', sid)
+        .eq('status', 'scheduled')
+        .or(`challenging_team_id.in.(${oppIds.join(',')}),challenged_team_id.in.(${oppIds.join(',')})`)
+      const newMap = new Map<string, OppMatch[]>()
+      for (const oppId of oppIds) {
+        newMap.set(oppId, (oppSched || []).filter(m =>
+          (m.challenging_team_id === oppId || m.challenged_team_id === oppId) &&
+          m.challenging_team_id !== teamId && m.challenged_team_id !== teamId
+        ) as OppMatch[])
+      }
+      setOppScheduledMap(newMap)
+    } else {
+      setOppScheduledMap(new Map())
+    }
   }, [supabase])
 
   // ── Re-fetch challenges when active team or season changes ──────────────────
@@ -1041,6 +1080,41 @@ export default function DashboardPage() {
                           </span>
                         </p>
                       )}
+
+                      {/* Opponent's other scheduled matches */}
+                      {(() => {
+                        const otherMatches = oppScheduledMap.get(opponent(c).id) ?? []
+                        if (otherMatches.length === 0) return null
+                        return (
+                          <div className="mt-2 pt-2 border-t border-slate-700/40">
+                            <p className="text-[10px] text-slate-500 uppercase tracking-wide font-medium mb-1">
+                              Their other upcoming matches
+                            </p>
+                            <div className="space-y-0.5">
+                              {otherMatches.slice(0, 2).map(m => {
+                                const mt = m.confirmed_time ?? m.accepted_slot ?? m.match_date
+                                const other = m.challenging_team_id === opponent(c).id ? m.challenged_team : m.challenging_team
+                                return (
+                                  <div key={m.id} className="flex items-center gap-1.5 text-xs">
+                                    <span className="text-slate-600 shrink-0">vs</span>
+                                    <span className="text-slate-400 font-medium truncate max-w-[130px]">{other?.name}</span>
+                                    {mt && (
+                                      <>
+                                        <span className="text-slate-700">·</span>
+                                        <span className="text-slate-500 shrink-0">
+                                          {new Date(mt).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                                          {' · '}
+                                          {new Date(mt).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })()}
                     </div>
                     <div className="flex flex-col gap-2 shrink-0">
                       {canReport && (
@@ -1240,6 +1314,61 @@ export default function DashboardPage() {
           <Link href="/ladder">
             <Button size="sm" className="bg-emerald-500 hover:bg-emerald-600">Browse Ladder to Challenge</Button>
           </Link>
+        </Card>
+      )}
+
+      {/* ── Season Stats ─────────────────────────────────────────────────────── */}
+      {activeTeam && (wins + losses > 0 || myRecentForm.length > 0) && (
+        <Card className="bg-slate-800/40 border-slate-700/30 p-4">
+          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-3">
+            Season Stats — {activeTeam.name}
+          </p>
+          <div className="grid grid-cols-4 gap-2 text-center">
+            <div>
+              <p className="text-2xl font-bold text-white tabular-nums">{wins + losses}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">Played</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-emerald-400 tabular-nums">{wins}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">Wins</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-red-400 tabular-nums">{losses}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">Losses</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-white tabular-nums">
+                {wins + losses === 0 ? '—' : `${Math.round((wins / (wins + losses)) * 100)}%`}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-0.5">Win Rate</p>
+            </div>
+          </div>
+          {(myWinStreak >= 2 || myRecentForm.length > 0) && (
+            <div className="flex items-center gap-3 mt-3 pt-3 border-t border-slate-700/50 flex-wrap">
+              {myWinStreak >= 2 && (
+                <span className="text-xs font-semibold text-orange-400">
+                  🔥 {myWinStreak}-match win streak
+                </span>
+              )}
+              {myRecentForm.length > 0 && (
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <span className="text-[11px] text-slate-500">Last {myRecentForm.length}</span>
+                  <div className="flex items-center gap-0.5">
+                    {[...myRecentForm].reverse().slice(0, 5).reverse().map((r, i) => (
+                      <span
+                        key={i}
+                        className={`inline-flex items-center justify-center h-5 w-5 rounded text-[10px] font-bold ${
+                          r === 'W' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                        }`}
+                      >
+                        {r}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </Card>
       )}
 
