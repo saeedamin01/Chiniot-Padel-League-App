@@ -14,6 +14,7 @@ import {
   Menu,
   X,
   ListOrdered,
+  History,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
@@ -38,6 +39,11 @@ const sidebarLinks = [
     title: 'Ladder',
     href: '/admin/ladder',
     icon: ListOrdered,
+  },
+  {
+    title: 'Ladder History',
+    href: '/admin/ladder-history',
+    icon: History,
   },
   {
     title: 'Challenges',

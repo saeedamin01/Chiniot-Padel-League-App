@@ -9,6 +9,10 @@
       "schedule": "0 2 * * *"
     },
     {
+      "path": "/api/cron/ladder-snapshot",
+      "schedule": "15 2 * * *"
+    },
+    {
       "path": "/api/cron/result-verify",
       "schedule": "*/15 * * * *"
     }
