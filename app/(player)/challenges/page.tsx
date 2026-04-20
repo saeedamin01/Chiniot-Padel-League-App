@@ -300,7 +300,7 @@ export default function ChallengesPage() {
       setSlot1(''); setSlot2(''); setSlot3(''); setSendError('')
       setUseTicket(false); setSelectedTicketType(null)
       router.replace('/challenges')
-      fetchChallenges()
+      if (activeTeam) fetchChallenges(activeTeam.id)
     } catch (err) {
       setSendError('Something went wrong. Please try again.')
     } finally {
@@ -352,7 +352,7 @@ export default function ChallengesPage() {
       const d = await res.json()
       if (!res.ok) { toast.error(d.error || 'Failed'); return }
       toast.success(action === 'verify' ? 'Result verified! Rankings updated.' : 'Result disputed — admin will review.')
-      fetchChallenges()
+      if (activeTeam) fetchChallenges(activeTeam.id)
     } catch { toast.error('An error occurred') }
     finally { setVerifyLoading(null) }
   }
@@ -370,7 +370,7 @@ export default function ChallengesPage() {
       if (!res.ok) { toast.error(d.error || 'Failed to forfeit'); return }
       toast.success('Challenge forfeited.')
       setForfeitTarget(null)
-      fetchChallenges()
+      if (activeTeam) fetchChallenges(activeTeam.id)
     } catch { toast.error('An error occurred') }
     finally { setForfeiting(false) }
   }
