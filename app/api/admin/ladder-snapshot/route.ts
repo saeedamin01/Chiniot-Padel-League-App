@@ -17,8 +17,8 @@ export async function POST() {
 
     // Verify admin role
     const { data: player } = await adminClient
-      .from('players').select('role').eq('id', user.id).single()
-    if (player?.role !== 'admin') {
+      .from('players').select('is_admin').eq('id', user.id).single()
+    if (!player?.is_admin) {
       return NextResponse.json({ error: 'Admin only' }, { status: 403 })
     }
 
