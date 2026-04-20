@@ -41,13 +41,17 @@ export async function getTeamActiveChallenge(teamId: string, seasonId: string) {
     .in('status', ['pending', 'accepted', 'accepted_open', 'time_pending_confirm', 'reschedule_requested', 'reschedule_pending_admin', 'revision_proposed', 'scheduled'])
     .maybeSingle()
 
+  // For incoming: only check for ACCEPTED (or beyond) challenges.
+  // A team may have multiple simultaneous PENDING incoming challenges — that is intentional.
+  // Accepting one dissolves the rest. So we must NOT block new challengers just because
+  // the team already has a pending incoming. Only an accepted challenge locks them out.
   const { data: incoming } = await supabase
     .from('challenges')
     .select('*, challenging_team:teams!challenging_team_id(*), challenged_team:teams!challenged_team_id(*)')
     .eq('challenged_team_id', teamId)
     .eq('season_id', seasonId)
-    .in('status', ['pending', 'accepted', 'accepted_open', 'time_pending_confirm', 'reschedule_requested', 'reschedule_pending_admin', 'revision_proposed', 'scheduled'])
-    .maybeSingle()
+    .in('status', ['accepted', 'accepted_open', 'time_pending_confirm', 'reschedule_requested', 'reschedule_pending_admin', 'revision_proposed', 'scheduled'])
+    .maybeSingle()  // at most 1 accepted challenge can exist at a time — safe to use .maybeSingle()
 
   return { outgoing, incoming }
 }

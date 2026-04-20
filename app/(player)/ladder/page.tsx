@@ -473,7 +473,19 @@ export default function LadderPage() {
             const requiresTicket  = !normalEligible && !!ticketEligibleTeam
             const ticketType      = requiresTicket ? resolvedTicketType : null
 
-            const canChallenge = !isMyTeam && !isFrozen && !challengeInfo && !!eligibleMyTeam
+            // A team is only blocked from receiving new challenges if they have already
+            // ACCEPTED an incoming challenge (or are in an active match / result pending).
+            // A team with only PENDING incoming challenges can still receive more —
+            // accepting one will dissolve the rest automatically.
+            // A team's own OUTGOING challenge (to someone above them) does NOT block
+            // them from being challenged from below.
+            const ACCEPTED_STATUSES = ['accepted', 'accepted_open', 'time_pending_confirm',
+              'reschedule_requested', 'reschedule_pending_admin', 'scheduled', 'result_pending']
+            const targetIsLocked = !!challengeInfo && (
+              (challengeInfo.type === 'received' && ACCEPTED_STATUSES.includes(challengeInfo.status)) ||
+              challengeInfo.status === 'result_pending'
+            )
+            const canChallenge = !isMyTeam && !isFrozen && !targetIsLocked && !!eligibleMyTeam
 
             positions.push({ rank, status: pos.status as 'active' | 'frozen', team: pos.team, tier, team_id: pos.team_id, isMyTeam, canChallenge, requiresTicket, ticketType, challengeInfo, stats, tickets })
           }
