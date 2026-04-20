@@ -14,7 +14,7 @@ import { Player } from '@/types'
 import {
   Shield, Mail, Lock, CheckCircle, ExternalLink, KeyRound,
   Plus, Loader2, Copy, Users, Upload, Download, AlertCircle,
-  CheckCircle2, XCircle, ChevronRight,
+  CheckCircle2, XCircle, ChevronRight, Pencil,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -113,6 +113,15 @@ export default function PlayersPage() {
   const [addLoading, setAddLoading]     = useState(false)
   const [addError, setAddError]         = useState('')
   const [newCreds, setNewCreds]         = useState<BulkResult | null>(null)
+
+  // ── Edit player modal ─────────────────────────────────────────────────────
+  const [showEditModal, setShowEditModal]   = useState(false)
+  const [editPlayer, setEditPlayer]         = useState<PlayerRow | null>(null)
+  const [editName, setEditName]             = useState('')
+  const [editEmail, setEditEmail]           = useState('')
+  const [editPhone, setEditPhone]           = useState('')
+  const [editLoading, setEditLoading]       = useState(false)
+  const [editError, setEditError]           = useState('')
 
   // ── Bulk upload modal ─────────────────────────────────────────────────────
   const [showBulkModal, setShowBulkModal] = useState(false)
@@ -239,6 +248,47 @@ export default function PlayersPage() {
       .join('\n')
     navigator.clipboard.writeText(lines)
     toast.success('All credentials copied to clipboard')
+  }
+
+  // ── Edit player ───────────────────────────────────────────────────────────
+  function openEditModal(player: PlayerRow) {
+    setEditPlayer(player)
+    setEditName(player.name)
+    setEditEmail(player.email)
+    setEditPhone(player.phone || '')
+    setEditError('')
+    setShowEditModal(true)
+  }
+
+  async function handleEditSave() {
+    if (!editPlayer) return
+    setEditError('')
+    if (!editName.trim()) { setEditError('Name is required'); return }
+    if (!editEmail.trim()) { setEditError('Email is required'); return }
+
+    setEditLoading(true)
+    try {
+      const res  = await fetch(`/api/admin/players/${editPlayer.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name:  editName.trim(),
+          phone: editPhone.trim(),
+          email: editEmail.trim().toLowerCase(),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setEditError(data.error || 'Failed to update player'); return }
+
+      if (data.emailChanged) {
+        toast.success(`Player updated. A confirmation email was sent to ${editEmail.trim().toLowerCase()} — the player must click the link to activate their new email.`, { duration: 6000 })
+      } else {
+        toast.success('Player updated successfully')
+      }
+      setShowEditModal(false)
+      loadPlayers()
+    } catch { setEditError('Something went wrong') }
+    finally { setEditLoading(false) }
   }
 
   // ── Existing player actions ───────────────────────────────────────────────
@@ -392,6 +442,10 @@ export default function PlayersPage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex gap-1 justify-end">
+                      <Button size="sm" variant="ghost" onClick={() => openEditModal(player)}
+                        className="text-slate-400 hover:bg-slate-400/10 h-7 w-7 p-0" title="Edit player">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
                       {!player.email_verified && (
                         <Button size="sm" variant="ghost" onClick={() => handleResendVerification(player.id, player.email)}
                           className="text-blue-400 hover:bg-blue-400/10 h-7 w-7 p-0" title="Resend verification email">
@@ -650,6 +704,88 @@ export default function PlayersPage() {
               <Button className="w-full bg-slate-700 hover:bg-slate-600" onClick={() => { setShowBulkModal(false); resetBulk() }}>Close</Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════════════════════════════════════════════════════════
+          EDIT PLAYER MODAL
+      ════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={showEditModal} onOpenChange={open => { if (!open) setShowEditModal(false) }}>
+        <DialogContent className="bg-slate-900 border-slate-700 max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <Pencil className="h-4 w-4 text-emerald-400" />
+              Edit Player
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Update name, phone, or email for <span className="text-slate-200 font-medium">{editPlayer?.name}</span>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-1">
+            {editError && (
+              <p className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded p-2">{editError}</p>
+            )}
+
+            <div>
+              <Label className="text-slate-300">Full Name <span className="text-red-400">*</span></Label>
+              <Input
+                value={editName}
+                onChange={e => setEditName(e.target.value)}
+                placeholder="Ahmed Khan"
+                className="bg-slate-800 border-slate-700 text-white mt-2"
+              />
+            </div>
+
+            <div>
+              <Label className="text-slate-300">Phone <span className="text-slate-500 text-xs">(optional)</span></Label>
+              <Input
+                value={editPhone}
+                onChange={e => setEditPhone(e.target.value)}
+                placeholder="+92 300 1234567"
+                className="bg-slate-800 border-slate-700 text-white mt-2"
+              />
+            </div>
+
+            <div>
+              <Label className="text-slate-300">Email Address <span className="text-red-400">*</span></Label>
+              <Input
+                value={editEmail}
+                onChange={e => setEditEmail(e.target.value)}
+                type="email"
+                placeholder="ahmed@example.com"
+                className="bg-slate-800 border-slate-700 text-white mt-2"
+              />
+              {editEmail.trim().toLowerCase() !== (editPlayer?.email ?? '').toLowerCase() && (
+                <div className="mt-2 flex items-start gap-2 text-xs text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-lg px-3 py-2">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <span>
+                    A confirmation email will be sent to the new address.
+                    The player&apos;s login will switch to the new email only after they click the confirmation link.
+                    Their old email continues to work until then.
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <Button
+                variant="outline"
+                className="flex-1 border-slate-600 text-slate-300 hover:bg-slate-800"
+                onClick={() => setShowEditModal(false)}
+                disabled={editLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                onClick={handleEditSave}
+                disabled={editLoading}
+              >
+                {editLoading ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving…</> : 'Save Changes'}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
