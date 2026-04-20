@@ -56,7 +56,6 @@ export default function ChallengesPage() {
 
   const [loading, setLoading] = useState(true)
   const [challenges, setChallenges] = useState<EnhancedChallenge[]>([])
-  const [userTeamIds, setUserTeamIds] = useState<string[]>([])
   const [seasonId, setSeasonId] = useState('')
   const [verifyLoading, setVerifyLoading] = useState<string | null>(null)
 
@@ -89,11 +88,8 @@ export default function ChallengesPage() {
     eveningEndHour: 21,
   })
 
-  const fetchChallenges = useCallback(async () => {
+  const fetchChallenges = useCallback(async (teamId: string) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
       const { data: season } = await supabase.from('seasons').select('id').eq('is_active', true).single()
       if (!season) { setLoading(false); return }
       setSeasonId(season.id)
@@ -122,38 +118,32 @@ export default function ChallengesPage() {
         .order('name')
       setVenues(venueData || [])
 
-      const { data: userTeams } = await supabase
-        .from('teams').select('id').eq('season_id', season.id)
-        .or(`player1_id.eq.${user.id},player2_id.eq.${user.id}`)
-      const teamIds = userTeams?.map(t => t.id) || []
-      setUserTeamIds(teamIds)
-
+      // Fetch only challenges involving the currently active team
       const { data: allChallenges, error } = await supabase
         .from('challenges')
         .select(`*, challenging_team:teams!challenging_team_id(id, name, player1:players!player1_id(name), player2:players!player2_id(name)), challenged_team:teams!challenged_team_id(id, name, player1:players!player1_id(name), player2:players!player2_id(name)), match_result:match_results!challenge_id(id, winner_team_id, loser_team_id, reported_by_team_id, verified_at, auto_verified, verify_deadline, match_date, set1_challenger, set1_challenged, set2_challenger, set2_challenged, supertiebreak_challenger, supertiebreak_challenged)`)
         .eq('season_id', season.id)
+        .or(`challenging_team_id.eq.${teamId},challenged_team_id.eq.${teamId}`)
 
       if (error) { setLoading(false); return }
 
-      const enriched = (allChallenges || [])
-        .filter(c => teamIds.includes(c.challenging_team_id) || teamIds.includes(c.challenged_team_id))
-        .map(c => {
-          const isOutgoing = teamIds.includes(c.challenging_team_id)
-          const deadline = new Date(isOutgoing ? c.match_deadline : c.accept_deadline)
-          const daysUntil = Math.max(0, Math.ceil((deadline.getTime() - Date.now()) / 86400000))
-          const rawResult = Array.isArray(c.match_result) ? c.match_result[0] : c.match_result
-          const opponentTeam = isOutgoing ? c.challenged_team : c.challenging_team
-          const p1 = (opponentTeam as any)?.player1?.name
-          const p2 = (opponentTeam as any)?.player2?.name
-          return {
-            ...c,
-            isOutgoing,
-            opponentTeamName: (opponentTeam as any)?.name || 'Unknown',
-            opponentPlayerNames: [p1, p2].filter(Boolean).join(' & '),
-            daysUntilDeadline: daysUntil,
-            matchResult: rawResult || null,
-          }
-        })
+      const enriched = (allChallenges || []).map(c => {
+        const isOutgoing = c.challenging_team_id === teamId
+        const deadline = new Date(isOutgoing ? c.match_deadline : c.accept_deadline)
+        const daysUntil = Math.max(0, Math.ceil((deadline.getTime() - Date.now()) / 86400000))
+        const rawResult = Array.isArray(c.match_result) ? c.match_result[0] : c.match_result
+        const opponentTeam = isOutgoing ? c.challenged_team : c.challenging_team
+        const p1 = (opponentTeam as any)?.player1?.name
+        const p2 = (opponentTeam as any)?.player2?.name
+        return {
+          ...c,
+          isOutgoing,
+          opponentTeamName: (opponentTeam as any)?.name || 'Unknown',
+          opponentPlayerNames: [p1, p2].filter(Boolean).join(' & '),
+          daysUntilDeadline: daysUntil,
+          matchResult: rawResult || null,
+        }
+      })
 
       setChallenges(enriched)
     } catch (err) {
@@ -163,7 +153,13 @@ export default function ChallengesPage() {
     }
   }, [supabase])
 
-  useEffect(() => { fetchChallenges() }, [fetchChallenges])
+  // Re-fetch and clear stale data whenever the active team changes
+  useEffect(() => {
+    if (!activeTeam) { setLoading(false); return }
+    setLoading(true)
+    setChallenges([])
+    fetchChallenges(activeTeam.id)
+  }, [activeTeam, fetchChallenges])
 
   // Load team's active tickets whenever the active team or season changes
   useEffect(() => {

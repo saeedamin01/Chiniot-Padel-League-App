@@ -184,14 +184,18 @@ export default function DashboardPage() {
     setVenues(venueData || [])
 
     // Win/loss count for my team + all match results for opponent stats
+    // Only count VERIFIED results — unverified/disputed scores don't affect stats yet
     const [{ count: w }, { count: l }, allResultsRes] = await Promise.all([
       supabase.from('match_results').select('id', { count: 'exact' })
-        .eq('season_id', sid).eq('winner_team_id', teamId),
+        .eq('season_id', sid).eq('winner_team_id', teamId)
+        .not('verified_at', 'is', null),
       supabase.from('match_results').select('id', { count: 'exact' })
-        .eq('season_id', sid).eq('loser_team_id', teamId),
+        .eq('season_id', sid).eq('loser_team_id', teamId)
+        .not('verified_at', 'is', null),
       supabase.from('match_results')
         .select('winner_team_id, loser_team_id, created_at')
         .eq('season_id', sid)
+        .not('verified_at', 'is', null)
         .order('created_at', { ascending: false }),
     ])
     setWins(w ?? 0)
