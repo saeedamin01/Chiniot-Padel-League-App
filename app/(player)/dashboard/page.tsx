@@ -251,6 +251,15 @@ export default function DashboardPage() {
   // ── Re-fetch challenges when active team or season changes ──────────────────
   useEffect(() => {
     if (selectedTeamId && seasonId) {
+      // Clear stale data immediately so the UI doesn't show old team's data
+      setLoading(true)
+      setChallenges([])
+      setWins(0)
+      setLosses(0)
+      setMyRecentForm([])
+      setMyWinStreak(0)
+      setOpponentStatsMap(new Map())
+      setOppScheduledMap(new Map())
       fetchChallenges(selectedTeamId, seasonId).finally(() => setLoading(false))
     } else {
       setLoading(false)
