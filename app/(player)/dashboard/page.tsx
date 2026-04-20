@@ -98,7 +98,7 @@ function SectionHeader({ icon, label, count, color }: {
 export default function DashboardPage() {
   const supabase = createClient()
   // ── Team context — single source of truth for active team ────────────────────
-  const { activeTeam, teams, seasonId, refresh: refreshTeam } = useTeam()
+  const { activeTeam, teams, switchTeam, seasonId, refresh: refreshTeam } = useTeam()
   const selectedTeamId = activeTeam?.id ?? null
 
   const [loading, setLoading] = useState(true)
@@ -529,6 +529,42 @@ export default function DashboardPage() {
           </p>
         )}
       </div>
+
+      {/* ── Team switcher — shown on mobile when player has multiple teams ── */}
+      {teams.length > 1 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-slate-400 font-medium shrink-0">Active team:</span>
+          <div className="flex gap-2 flex-wrap">
+            {teams.map(team => {
+              const isActive = team.id === activeTeam?.id
+              const TIER_COLORS: Record<string, string> = {
+                Diamond:  'border-cyan-400/60 text-cyan-400 bg-cyan-400/10',
+                Platinum: 'border-violet-400/60 text-violet-400 bg-violet-400/10',
+                Gold:     'border-yellow-400/60 text-yellow-400 bg-yellow-400/10',
+                Silver:   'border-slate-300/60 text-slate-300 bg-slate-300/10',
+                Bronze:   'border-orange-400/60 text-orange-400 bg-orange-400/10',
+              }
+              const tierCls = TIER_COLORS[team.tierName ?? ''] ?? 'border-slate-600 text-slate-300 bg-slate-800'
+              return (
+                <button
+                  key={team.id}
+                  onClick={() => switchTeam(team.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
+                    isActive
+                      ? `${tierCls} ring-2 ring-offset-2 ring-offset-background ring-current/40`
+                      : 'border-slate-600 text-slate-400 bg-slate-800/60 hover:border-slate-500 hover:text-slate-200'
+                  }`}
+                >
+                  <Users className="h-3 w-3 shrink-0" />
+                  <span>{team.name}</span>
+                  {team.tierName && <span className="opacity-70">· {team.tierName}</span>}
+                  {isActive && <span className="ml-0.5 text-[9px] uppercase tracking-wide font-bold opacity-80">✓</span>}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── Team stats strip ── */}
       {activeTeam && (
