@@ -27,7 +27,7 @@ export function TeamBar() {
   const colors = TIER_COLORS[activeTeam.tierName ?? ''] ?? DEFAULT_COLORS
 
   return (
-    <div className={`md:hidden sticky top-14 z-30 border-b ${colors.bar} backdrop-blur-sm`}>
+    <div className={`pwa-team-bar border-b ${colors.bar} backdrop-blur-sm`}>
       <div className="max-w-7xl mx-auto px-4">
         <button
           onClick={() => setOpen(o => !o)}

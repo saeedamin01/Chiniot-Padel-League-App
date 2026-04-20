@@ -256,6 +256,21 @@ html:not(.dark) ::placeholder { color: hsl(215 14% 62%) !important; }
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* Team switcher bar: sticks just below the top navbar.
+   Must account for safe-area-inset-top so it isn't hidden behind
+   the navbar on iOS PWA (where the navbar is taller than h-14). */
+.pwa-team-bar {
+  position: sticky;
+  top: calc(3.5rem + env(safe-area-inset-top, 0px));
+  z-index: 30;
+}
+@media (min-width: 768px) {
+  /* Desktop uses the navbar dropdown instead */
+  .pwa-team-bar {
+    display: none;
+  }
+}
+
 /* Main content: leave room for the fixed top header + bottom nav on mobile */
 .pwa-main {
   /* 56px header + safe-area-top on mobile, then 64px bottom nav + safe-area-bottom */
