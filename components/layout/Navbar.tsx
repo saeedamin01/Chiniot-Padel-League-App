@@ -52,10 +52,10 @@ function TeamSwitcher() {
   // Single team — just show the badge, no dropdown
   if (teams.length === 1) {
     return (
-      <div className={`hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium ${tierClass}`}>
-        <Users className="h-3 w-3" />
-        <span>{activeTeam.name}</span>
-        {activeTeam.rank && <span className="opacity-60">#{activeTeam.rank}</span>}
+      <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium ${tierClass}`}>
+        <Users className="h-3 w-3 shrink-0" />
+        <span className="truncate max-w-[100px] md:max-w-none">{activeTeam.name}</span>
+        {activeTeam.rank && <span className="opacity-60 hidden md:inline">#{activeTeam.rank}</span>}
       </div>
     )
   }
@@ -64,11 +64,11 @@ function TeamSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className={`hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium transition-opacity hover:opacity-80 ${tierClass}`}>
-          <Users className="h-3 w-3" />
-          <span>{activeTeam.name}</span>
-          {activeTeam.rank && <span className="opacity-60">#{activeTeam.rank}</span>}
-          <ChevronDown className="h-3 w-3 opacity-60" />
+        <button className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium transition-opacity hover:opacity-80 ${tierClass}`}>
+          <Users className="h-3 w-3 shrink-0" />
+          <span className="truncate max-w-[100px] md:max-w-none">{activeTeam.name}</span>
+          {activeTeam.rank && <span className="opacity-60 hidden md:inline">#{activeTeam.rank}</span>}
+          <ChevronDown className="h-3 w-3 opacity-60 shrink-0" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="center" className="w-56 bg-slate-900 border-slate-700">
