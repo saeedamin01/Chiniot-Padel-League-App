@@ -240,7 +240,7 @@ export default function DashboardPage() {
         newMap.set(oppId, (oppSched || []).filter(m =>
           (m.challenging_team_id === oppId || m.challenged_team_id === oppId) &&
           m.challenging_team_id !== teamId && m.challenged_team_id !== teamId
-        ) as OppMatch[])
+        ) as unknown as OppMatch[])
       }
       setOppScheduledMap(newMap)
     } else {
