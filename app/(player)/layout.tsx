@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Navbar } from '@/components/layout/Navbar'
 import { BottomNav } from '@/components/layout/BottomNav'
+import { TeamBar } from '@/components/layout/TeamBar'
 import { PushNotificationManager } from '@/components/PushNotificationManager'
 import { createClient } from '@/lib/supabase/client'
 import { TeamProvider } from '@/context/TeamContext'
@@ -103,6 +104,8 @@ export default function PlayerLayout({ children }: { children: React.ReactNode }
           onLogout={handleLogout}
         />
       )}
+      {/* Mobile team switcher bar — only shown when player is on 2+ teams */}
+      <TeamBar />
       {/* pwa-main handles safe-area padding on mobile, regular py-8 on desktop */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pwa-main">
         {children}

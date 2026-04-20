@@ -44,38 +44,32 @@ const TIER_COLORS: Record<string, string> = {
 function TeamSwitcher() {
   const { teams, activeTeam, switchTeam } = useTeam()
 
-  // Don't render if player has no teams or only 1 team
+  // On mobile, team switching is handled by the TeamBar below the navbar.
+  // Here we only render on desktop (md+).
   if (!activeTeam) return null
 
   const tierClass = TIER_COLORS[activeTeam.tierName ?? ''] ?? 'text-slate-400 border-slate-600 bg-slate-800'
 
-  // Single team — just show the badge, no dropdown
+  // Single team — static badge, desktop only
   if (teams.length === 1) {
     return (
-      <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-medium ${tierClass}`}>
-        {/* Mobile: tier name only */}
-        <span className="md:hidden">{activeTeam.tierName ?? activeTeam.name}</span>
-        {/* Desktop: full name + rank */}
-        <Users className="h-3 w-3 shrink-0 hidden md:block" />
-        <span className="hidden md:inline">{activeTeam.name}</span>
-        {activeTeam.rank && <span className="opacity-60 hidden md:inline">#{activeTeam.rank}</span>}
+      <div className={`hidden md:flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-medium ${tierClass}`}>
+        <Users className="h-3 w-3 shrink-0" />
+        <span>{activeTeam.name}</span>
+        {activeTeam.rank && <span className="opacity-60">#{activeTeam.rank}</span>}
       </div>
     )
   }
 
-  // Multiple teams — show switcher dropdown
+  // Multiple teams — dropdown switcher, desktop only
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className={`flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-medium transition-opacity hover:opacity-80 ${tierClass}`}>
-          {/* Mobile: tier name + chevron only */}
-          <span className="md:hidden">{activeTeam.tierName ?? activeTeam.name}</span>
-          <ChevronDown className="h-3 w-3 opacity-60 shrink-0 md:hidden" />
-          {/* Desktop: full name + rank + chevron */}
-          <Users className="h-3 w-3 shrink-0 hidden md:block" />
-          <span className="hidden md:inline">{activeTeam.name}</span>
-          {activeTeam.rank && <span className="opacity-60 hidden md:inline">#{activeTeam.rank}</span>}
-          <ChevronDown className="h-3 w-3 opacity-60 shrink-0 hidden md:block" />
+        <button className={`hidden md:flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-medium transition-opacity hover:opacity-80 ${tierClass}`}>
+          <Users className="h-3 w-3 shrink-0" />
+          <span>{activeTeam.name}</span>
+          {activeTeam.rank && <span className="opacity-60">#{activeTeam.rank}</span>}
+          <ChevronDown className="h-3 w-3 opacity-60 shrink-0" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="center" className="w-56 bg-slate-900 border-slate-700">
