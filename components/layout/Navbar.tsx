@@ -52,9 +52,12 @@ function TeamSwitcher() {
   // Single team — just show the badge, no dropdown
   if (teams.length === 1) {
     return (
-      <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium ${tierClass}`}>
-        <Users className="h-3 w-3 shrink-0" />
-        <span className="truncate max-w-[100px] md:max-w-none">{activeTeam.name}</span>
+      <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-medium ${tierClass}`}>
+        {/* Mobile: tier name only */}
+        <span className="md:hidden">{activeTeam.tierName ?? activeTeam.name}</span>
+        {/* Desktop: full name + rank */}
+        <Users className="h-3 w-3 shrink-0 hidden md:block" />
+        <span className="hidden md:inline">{activeTeam.name}</span>
         {activeTeam.rank && <span className="opacity-60 hidden md:inline">#{activeTeam.rank}</span>}
       </div>
     )
@@ -64,11 +67,15 @@ function TeamSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium transition-opacity hover:opacity-80 ${tierClass}`}>
-          <Users className="h-3 w-3 shrink-0" />
-          <span className="truncate max-w-[100px] md:max-w-none">{activeTeam.name}</span>
+        <button className={`flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-medium transition-opacity hover:opacity-80 ${tierClass}`}>
+          {/* Mobile: tier name + chevron only */}
+          <span className="md:hidden">{activeTeam.tierName ?? activeTeam.name}</span>
+          <ChevronDown className="h-3 w-3 opacity-60 shrink-0 md:hidden" />
+          {/* Desktop: full name + rank + chevron */}
+          <Users className="h-3 w-3 shrink-0 hidden md:block" />
+          <span className="hidden md:inline">{activeTeam.name}</span>
           {activeTeam.rank && <span className="opacity-60 hidden md:inline">#{activeTeam.rank}</span>}
-          <ChevronDown className="h-3 w-3 opacity-60 shrink-0" />
+          <ChevronDown className="h-3 w-3 opacity-60 shrink-0 hidden md:block" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="center" className="w-56 bg-slate-900 border-slate-700">
