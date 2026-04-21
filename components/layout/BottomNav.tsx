@@ -26,15 +26,16 @@ function TeamSwitcherStrip() {
   const { teams, activeTeam, switchTeam } = useTeam()
   const [open, setOpen] = useState(false)
 
-  // Only show when player is on 2+ teams
-  if (!activeTeam || teams.length < 2) return null
+  // Don't render until team context has loaded
+  if (!activeTeam) return null
 
   const tierCls = TIER_COLORS[activeTeam.tierName ?? ''] ?? 'text-slate-300 border-slate-500/50 bg-slate-500/10'
+  const canSwitch = teams.length >= 2
 
   return (
     <>
-      {/* Expanded picker — sits above the strip */}
-      {open && (
+      {/* Expanded picker — only for multi-team players */}
+      {open && canSwitch && (
         <div className="border-t border-slate-700/50 bg-slate-950/98 px-3 py-2 flex flex-col gap-1">
           {teams.map(team => {
             const tc = TIER_COLORS[team.tierName ?? ''] ?? 'text-slate-300'
@@ -61,10 +62,10 @@ function TeamSwitcherStrip() {
         </div>
       )}
 
-      {/* Compact strip — always visible when 2+ teams */}
+      {/* Team strip — always visible for every player once loaded */}
       <button
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center justify-between w-full px-4 py-1.5 border-t border-slate-700/50 bg-slate-900/80"
+        onClick={() => canSwitch && setOpen(o => !o)}
+        className={`flex items-center justify-between w-full px-4 py-1.5 border-t border-slate-700/50 bg-slate-900/80 ${canSwitch ? 'cursor-pointer' : 'cursor-default'}`}
       >
         <div className="flex items-center gap-2">
           <Users className="h-3 w-3 text-slate-400 shrink-0" />
@@ -74,7 +75,9 @@ function TeamSwitcherStrip() {
             {activeTeam.tierName && <span className="opacity-70 font-normal"> · {activeTeam.tierName}</span>}
           </span>
         </div>
-        <ChevronUp className={`h-3.5 w-3.5 text-slate-400 transition-transform ${open ? '' : 'rotate-180'}`} />
+        {canSwitch && (
+          <ChevronUp className={`h-3.5 w-3.5 text-slate-400 transition-transform ${open ? '' : 'rotate-180'}`} />
+        )}
       </button>
     </>
   )
