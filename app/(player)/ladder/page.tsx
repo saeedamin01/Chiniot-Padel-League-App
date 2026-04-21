@@ -58,7 +58,7 @@ interface PositionRow {
   canChallenge: boolean
   requiresTicket: boolean      // true when only a ticket makes this challenge possible
   ticketType: string | null    // which ticket type enables it
-  challengeInfo: TeamChallengeInfo | null
+  challenges: TeamChallengeInfo[]
   stats: TeamStats | null
   tickets: ActiveTicket[]
 }
@@ -337,37 +337,40 @@ export default function LadderPage() {
         }
 
         // ── Build challenge info map ─────────────────────────────────────────
-        const challengeMap = new Map<string, TeamChallengeInfo>()
+        // Stores ALL active challenges per team (not just first)
+        const challengeMap = new Map<string, TeamChallengeInfo[]>()
 
         for (const c of (activeChalRes.data || [])) {
           const challengingName = teamNameMap.get(c.challenging_team_id) ?? 'Unknown'
           const challengedName  = teamNameMap.get(c.challenged_team_id)  ?? 'Unknown'
           const status: TeamChallengeInfo['status'] = c.status
 
-          if (!challengeMap.has(c.challenging_team_id)) {
-            challengeMap.set(c.challenging_team_id, {
-              type: 'sent', status,
-              opponentName: challengedName,
-              opponentRank: teamRankMap.get(c.challenged_team_id) ?? null,
-              challengeId: c.id,
-            })
-          }
-          if (!challengeMap.has(c.challenged_team_id)) {
-            challengeMap.set(c.challenged_team_id, {
-              type: 'received', status,
-              opponentName: challengingName,
-              opponentRank: teamRankMap.get(c.challenging_team_id) ?? null,
-              challengeId: c.id,
-            })
-          }
+          if (!challengeMap.has(c.challenging_team_id)) challengeMap.set(c.challenging_team_id, [])
+          challengeMap.get(c.challenging_team_id)!.push({
+            type: 'sent', status,
+            opponentName: challengedName,
+            opponentRank: teamRankMap.get(c.challenged_team_id) ?? null,
+            challengeId: c.id,
+          })
+
+          if (!challengeMap.has(c.challenged_team_id)) challengeMap.set(c.challenged_team_id, [])
+          challengeMap.get(c.challenged_team_id)!.push({
+            type: 'received', status,
+            opponentName: challengingName,
+            opponentRank: teamRankMap.get(c.challenging_team_id) ?? null,
+            challengeId: c.id,
+          })
         }
 
         for (const mr of (unverifiedRes.data || [])) {
           const c = Array.isArray(mr.challenge) ? mr.challenge[0] : mr.challenge
           if (!c) continue
           for (const tid of [c.challenging_team_id, c.challenged_team_id]) {
-            if (tid && !challengeMap.has(tid)) {
-              challengeMap.set(tid, { type: 'sent', status: 'result_pending', opponentName: '', opponentRank: null, challengeId: c.id })
+            if (!tid) continue
+            if (!challengeMap.has(tid)) challengeMap.set(tid, [])
+            const existing = challengeMap.get(tid)!
+            if (!existing.some(e => e.challengeId === c.id)) {
+              existing.push({ type: 'sent', status: 'result_pending', opponentName: '', opponentRank: null, challengeId: c.id })
             }
           }
         }
@@ -386,8 +389,8 @@ export default function LadderPage() {
           myPositions
             .map(p => p.team_id)
             .filter(id => {
-              const ci = challengeMap.get(id)
-              return ci && (ci.type === 'sent' || ci.status === 'result_pending')
+              const cis = challengeMap.get(id) ?? []
+              return cis.some(ci => ci.type === 'sent' || ci.status === 'result_pending')
             })
         )
 
@@ -416,15 +419,15 @@ export default function LadderPage() {
             const pos = rankToPos.get(rank)
 
             if (!pos) {
-              positions.push({ rank, status: 'vacant', team: null, tier, team_id: null, isMyTeam: false, canChallenge: false, requiresTicket: false, ticketType: null, challengeInfo: null, stats: null, tickets: [] })
+              positions.push({ rank, status: 'vacant', team: null, tier, team_id: null, isMyTeam: false, canChallenge: false, requiresTicket: false, ticketType: null, challenges: [], stats: null, tickets: [] })
               continue
             }
 
-            const isMyTeam     = userTeamIdSet.has(pos.team_id)
-            const isFrozen     = pos.status === 'frozen'
-            const challengeInfo = challengeMap.get(pos.team_id) ?? null
-            const stats         = statsMap.get(pos.team_id) ?? { wins: 0, losses: 0, played: 0, recentForm: [], rankGained: 0, winStreak: 0 }
-            const tickets       = teamTicketMap.get(pos.team_id) ?? []
+            const isMyTeam  = userTeamIdSet.has(pos.team_id)
+            const isFrozen  = pos.status === 'frozen'
+            const challenges = challengeMap.get(pos.team_id) ?? []
+            const stats      = statsMap.get(pos.team_id) ?? { wins: 0, losses: 0, played: 0, recentForm: [], rankGained: 0, winStreak: 0 }
+            const tickets    = teamTicketMap.get(pos.team_id) ?? []
 
             // ── Normal eligibility (rank distance + rematch restriction) ────────
             const normalEligible = myPositions.find((my: any) => {
@@ -481,13 +484,13 @@ export default function LadderPage() {
             // them from being challenged from below.
             const ACCEPTED_STATUSES = ['accepted', 'accepted_open', 'time_pending_confirm',
               'reschedule_requested', 'reschedule_pending_admin', 'scheduled', 'result_pending']
-            const targetIsLocked = !!challengeInfo && (
-              (challengeInfo.type === 'received' && ACCEPTED_STATUSES.includes(challengeInfo.status)) ||
-              challengeInfo.status === 'result_pending'
+            const targetIsLocked = challenges.some(ci =>
+              (ci.type === 'received' && ACCEPTED_STATUSES.includes(ci.status)) ||
+              ci.status === 'result_pending'
             )
             const canChallenge = !isMyTeam && !isFrozen && !targetIsLocked && !!eligibleMyTeam
 
-            positions.push({ rank, status: pos.status as 'active' | 'frozen', team: pos.team, tier, team_id: pos.team_id, isMyTeam, canChallenge, requiresTicket, ticketType, challengeInfo, stats, tickets })
+            positions.push({ rank, status: pos.status as 'active' | 'frozen', team: pos.team, tier, team_id: pos.team_id, isMyTeam, canChallenge, requiresTicket, ticketType, challenges, stats, tickets })
           }
 
           return { tier, positions }
@@ -595,7 +598,7 @@ export default function LadderPage() {
 
                 // ── Filled row ───────────────────────────────────────────────
                 const isFrozen  = pos.status === 'frozen'
-                const hasChal   = !!pos.challengeInfo
+                const hasChal   = pos.challenges.length > 0
                 const hasStats  = !!pos.stats && pos.stats.played > 0
 
                 const cardBase = pos.isMyTeam
@@ -649,7 +652,7 @@ export default function LadderPage() {
                             <Snowflake className="h-2.5 w-2.5" />Frozen
                           </span>
                         )}
-                        {hasChal && <ChallengePill info={pos.challengeInfo!} />}
+                        {pos.challenges.map((ci, idx) => <ChallengePill key={idx} info={ci} />)}
 
                         {/* Active ticket pills */}
                         {pos.tickets.map(tk => {
@@ -675,8 +678,8 @@ export default function LadderPage() {
                         {pos.team?.player1?.name} &amp; {pos.team?.player2?.name}
                       </p>
 
-                      {/* Challenge opponent line */}
-                      {hasChal && <ChallengeOpponentLine info={pos.challengeInfo!} />}
+                      {/* Challenge opponent lines — one per active challenge */}
+                      {pos.challenges.map((ci, idx) => <ChallengeOpponentLine key={idx} info={ci} />)}
 
                       {/* Stats strip */}
                       {pos.stats && pos.stats.played > 0 && (
@@ -712,11 +715,15 @@ export default function LadderPage() {
                             </Button>
                           </Link>
                         ) : hasChal ? (
-                          <Link href={`/challenges/${pos.challengeInfo!.challengeId}`}>
-                            <button className="flex items-center gap-0.5 text-xs text-slate-500 hover:text-slate-300 transition-colors mt-1">
-                              View <ChevronRight className="h-3.5 w-3.5" />
-                            </button>
-                          </Link>
+                          <div className="flex flex-col gap-1">
+                            {pos.challenges.map((ci, idx) => (
+                              <Link key={idx} href={`/challenges/${ci.challengeId}`}>
+                                <button className="flex items-center gap-0.5 text-xs text-slate-500 hover:text-slate-300 transition-colors">
+                                  View <ChevronRight className="h-3.5 w-3.5" />
+                                </button>
+                              </Link>
+                            ))}
+                          </div>
                         ) : (
                           <span className="text-xs text-slate-600 italic mt-1 inline-block">Not eligible</span>
                         )}
