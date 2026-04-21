@@ -107,37 +107,21 @@ export function BottomNav() {
             )
           })}
 
-          {/* 5th slot — Team switcher (multi-team) or Profile (single-team) */}
-          {canSwitch ? (
-            <button
-              onClick={() => setSheetOpen(true)}
-              className="flex flex-col items-center justify-center gap-1 flex-1 py-2 relative transition-colors"
-            >
-              {/* Tier colour dot indicator */}
-              <div className="relative">
-                <Users className={`h-5 w-5 ${tierColors.tab}`} strokeWidth={1.8} />
+          {/* 5th slot — always Team tab; opens sheet to switch or view */}
+          <button
+            onClick={() => setSheetOpen(true)}
+            className="flex flex-col items-center justify-center gap-1 flex-1 py-2 relative transition-colors"
+          >
+            <div className="relative">
+              <Users className={`h-5 w-5 ${activeTeam ? tierColors.tab : 'text-slate-500'}`} strokeWidth={1.8} />
+              {activeTeam && (
                 <span className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-slate-950 ${tierColors.dot}`} />
-              </div>
-              <span className={`text-[10px] font-medium tracking-wide ${tierColors.tab}`}>
-                Team
-              </span>
-            </button>
-          ) : (
-            <Link
-              href="/profile"
-              className={`flex flex-col items-center justify-center gap-1 flex-1 py-2
-                transition-colors relative
-                ${pathname === '/profile' ? 'text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}
-            >
-              {pathname === '/profile' && (
-                <span className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-emerald-400" />
               )}
-              <User className={`h-5 w-5 ${pathname === '/profile' ? 'text-emerald-400' : ''}`} strokeWidth={pathname === '/profile' ? 2.5 : 1.8} />
-              <span className={`text-[10px] font-medium tracking-wide ${pathname === '/profile' ? 'text-emerald-400' : ''}`}>
-                Profile
-              </span>
-            </Link>
-          )}
+            </div>
+            <span className={`text-[10px] font-medium tracking-wide ${activeTeam ? tierColors.tab : 'text-slate-500'}`}>
+              Team
+            </span>
+          </button>
 
         </div>
       </nav>
