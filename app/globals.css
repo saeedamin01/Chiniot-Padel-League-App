@@ -273,9 +273,10 @@ html:not(.dark) ::placeholder { color: hsl(215 14% 62%) !important; }
 
 /* Main content: leave room for the fixed top header + bottom nav on mobile */
 .pwa-main {
-  /* 56px header + safe-area-top on mobile, then 64px bottom nav + safe-area-bottom */
+  /* 56px header + safe-area-top on mobile */
   padding-top: calc(3.5rem + env(safe-area-inset-top, 0px));
-  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+  /* 64px tabs + up to 40px team strip + safe-area-bottom */
+  padding-bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px));
 }
 @media (min-width: 768px) {
   /* Desktop: standard top navbar (already inside flow), no bottom nav */
