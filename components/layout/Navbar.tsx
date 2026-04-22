@@ -3,7 +3,7 @@
 import React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Trophy, LogOut, Settings, Shield, ChevronDown, Users, MessageCircle } from 'lucide-react'
+import { Trophy, LogOut, Settings, Shield, ChevronDown, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import {
@@ -17,7 +17,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { useTeam } from '@/context/TeamContext'
 import { NotificationBell } from '@/components/layout/NotificationBell'
-import { useChat } from '@/context/ChatContext'
+import { ChatBell } from '@/components/layout/ChatBell'
 
 interface NavbarProps {
   isAdmin?: boolean
@@ -31,7 +31,6 @@ const navLinks = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/ladder', label: 'Ladder' },
   { href: '/challenges', label: 'Challenges' },
-  { href: '/chat', label: 'Chat' },
   { href: '/league', label: 'League' },
 ]
 
@@ -127,7 +126,6 @@ export function Navbar({
     .join('')
   const pathname = usePathname()
   const isActive = (href: string) => pathname.startsWith(href)
-  const { totalUnread } = useChat()
 
   return (
     <nav className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 pwa-header shadow-sm">
@@ -141,23 +139,13 @@ export function Navbar({
 
           {/* Desktop Nav */}
           <div className="hidden md:flex items-center gap-1">
-            {navLinks.map((link) => {
-              const isChat = link.href === '/chat'
-              const badge = isChat ? totalUnread : 0
-              return (
-                <Link key={link.href} href={link.href} className="relative">
-                  <Button variant={isActive(link.href) ? 'default' : 'ghost'} size="sm" className="text-sm">
-                    {isChat && <MessageCircle className="h-3.5 w-3.5 mr-1" />}
-                    {link.label}
-                  </Button>
-                  {badge > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-0.5 rounded-full bg-emerald-500 text-slate-950 text-[9px] font-bold flex items-center justify-center">
-                      {badge > 9 ? '9+' : badge}
-                    </span>
-                  )}
-                </Link>
-              )
-            })}
+            {navLinks.map((link) => (
+              <Link key={link.href} href={link.href}>
+                <Button variant={isActive(link.href) ? 'default' : 'ghost'} size="sm" className="text-sm">
+                  {link.label}
+                </Button>
+              </Link>
+            ))}
           </div>
 
           {/* Team Switcher — centre */}
@@ -167,6 +155,9 @@ export function Navbar({
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Theme Toggle */}
             <ThemeToggle />
+
+            {/* Chat */}
+            <ChatBell />
 
             {/* Notifications */}
             <NotificationBell />
