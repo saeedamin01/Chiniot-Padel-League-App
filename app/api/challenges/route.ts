@@ -7,6 +7,7 @@ import { addHours, addDays } from 'date-fns'
 import type { TicketType } from '@/types'
 import { logChallengeEvent } from '@/lib/challenges/events'
 import { sendEventEmail } from '@/lib/email/events'
+import { sendPushEvent } from '@/lib/push/notify'
 
 export const dynamic = 'force-dynamic'
 
@@ -198,18 +199,26 @@ export async function POST(request: NextRequest) {
       ])
     }
 
-    // Fire-and-forget email to challenged team players
+    // Fire-and-forget email + push to challenged team players
     if (challengedTeamData) {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
       const recipients = [challengedTeamData.player1_id, challengedTeamData.player2_id].filter(Boolean) as string[]
+      const challengedTeamName = (challengedTeamData as any).name ?? ''
+
       sendEventEmail('challenge_received', recipients, {
-        challengedTeamName: (challengedTeamData as any).name ?? '',
+        challengedTeamName,
         challengingTeamName: challengingTeam.name,
         challengeCode: challenge.challenge_code,
         slots: [slot1, slot2, slot3].filter(Boolean),
         deadline: challenge.accept_deadline,
         acceptUrl: `${appUrl}/challenges/${challenge.id}`,
         ticketType: ticketType || null,
+      }).catch(() => {})
+
+      sendPushEvent('challenge_received', recipients, {
+        challengingTeamName: challengingTeam.name,
+        challengeCode: challenge.challenge_code,
+        challengeId: challenge.id,
       }).catch(() => {})
     }
 

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { addHours } from 'date-fns'
 import { logChallengeEvent } from '@/lib/challenges/events'
 import { sendEventEmail } from '@/lib/email/events'
+import { sendPushEvent } from '@/lib/push/notify'
 
 export const dynamic = 'force-dynamic'
 
@@ -248,7 +249,7 @@ export async function POST(
       }
     }
 
-    // Fire-and-forget email to the challenging team
+    // Fire-and-forget email + push to the challenging team
     if (challengingTeamData) {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
       const recipients = [challengingTeamData.player1_id, challengingTeamData.player2_id].filter(Boolean) as string[]
@@ -264,6 +265,13 @@ export async function POST(
         mode: acceptMode as 'open' | 'slot',
         scheduledTime,
         challengeUrl: `${appUrl}/challenges/${params.id}`,
+      }).catch(() => {})
+
+      sendPushEvent('challenge_accepted', recipients, {
+        challengedTeamName: challengedTeam!.name,
+        challengeCode: challenge.challenge_code,
+        mode: acceptMode as 'open' | 'slot',
+        challengeId: params.id,
       }).catch(() => {})
     }
 

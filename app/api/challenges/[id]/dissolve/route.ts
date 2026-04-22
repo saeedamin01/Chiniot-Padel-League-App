@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { sendEventEmail } from '@/lib/email/events'
+import { sendPushEvent } from '@/lib/push/notify'
 
 export const dynamic = 'force-dynamic'
 
@@ -93,6 +94,12 @@ export async function POST(
       ].filter(Boolean) as string[]
 
       sendEventEmail('challenge_dissolved', allPlayerIds, dissolvedPayload).catch(() => {})
+
+      sendPushEvent('challenge_dissolved', allPlayerIds, {
+        challengeCode: challenge.challenge_code,
+        reason: reason ?? 'Dissolved by admin.',
+        challengeId: params.id,
+      }).catch(() => {})
     }
 
     return NextResponse.json({ challenge: updated })

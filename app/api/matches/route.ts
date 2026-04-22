@@ -5,6 +5,7 @@ import { addMinutes } from 'date-fns'
 import { createNotification } from '@/lib/notifications/service'
 import { logChallengeEvent } from '@/lib/challenges/events'
 import { sendEventEmail } from '@/lib/email/events'
+import { sendPushEvent } from '@/lib/push/notify'
 
 export const dynamic = 'force-dynamic'
 
@@ -195,6 +196,13 @@ export async function POST(request: NextRequest) {
       isReporter: false,
     }).catch(() => {})
 
+    sendPushEvent('result_submitted', opposingPlayerIds, {
+      reporterTeamName: reportingTeam?.name ?? 'Your opponent',
+      challengeCode: challenge.challenge_code,
+      isReporter: false,
+      challengeId: challengeId,
+    }).catch(() => {})
+
     // Reporter (submitting team) — "score submitted, waiting for verification"
     const { data: reportingTeamFull } = await adminClient
       .from('teams')
@@ -208,6 +216,13 @@ export async function POST(request: NextRequest) {
         ...sharedPayload,
         opponentName: opposingTeam.name,
         isReporter: true,
+      }).catch(() => {})
+
+      sendPushEvent('result_submitted', reporterIds, {
+        reporterTeamName: reportingTeam?.name ?? 'Your team',
+        challengeCode: challenge.challenge_code,
+        isReporter: true,
+        challengeId: challengeId,
       }).catch(() => {})
     }
   }

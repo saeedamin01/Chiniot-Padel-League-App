@@ -5,7 +5,23 @@ import { Bell, BellOff, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? ''
-const DISMISSED_KEY = 'cpl-push-dismissed'
+const DISMISSED_KEY    = 'cpl-push-dismissed'
+
+/**
+ * Convert a URL-safe Base64 VAPID public key to the Uint8Array that
+ * pushManager.subscribe({ applicationServerKey }) requires.
+ */
+function urlBase64ToArrayBuffer(base64String: string): ArrayBuffer {
+  const padding   = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64    = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const rawData   = window.atob(base64)
+  const buffer    = new ArrayBuffer(rawData.length)
+  const outputArr = new Uint8Array(buffer)
+  for (let i = 0; i < rawData.length; i++) {
+    outputArr[i] = rawData.charCodeAt(i)
+  }
+  return buffer
+}
 
 type State = 'unsupported' | 'loading' | 'denied' | 'subscribed' | 'unsubscribed'
 
@@ -72,7 +88,7 @@ export function PushNotificationToggle() {
       const reg = await navigator.serviceWorker.ready
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: VAPID_PUBLIC_KEY,
+        applicationServerKey: urlBase64ToArrayBuffer(VAPID_PUBLIC_KEY),
       })
       await saveToDB(sub)
       localStorage.removeItem(DISMISSED_KEY)
