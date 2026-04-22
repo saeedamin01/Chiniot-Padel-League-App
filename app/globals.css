@@ -3,69 +3,80 @@
 @tailwind utilities;
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   DARK MODE  (default / existing)
-   These are used by shadcn/ui components via hsl(var(--*))
+   CSS DESIGN TOKENS
+   Light is the default (:root). Dark mode activates via the .dark class on
+   <html>, which next-themes manages. All shadcn/ui components read hsl(var(--*)).
 ───────────────────────────────────────────────────────────────────────────── */
 @layer base {
+  /* ── LIGHT (default) ──────────────────────────────────────────────────── */
   :root {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 160 84% 39%;
-    --primary-foreground: 355.7 100% 97.3%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 160 84% 39%;
-    --radius: 0.75rem;
+    --background:         210 40% 97%;
+    --foreground:         222 47% 11%;
+    --card:               0 0% 100%;
+    --card-foreground:    222 47% 11%;
+    --popover:            0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary:            160 84% 33%;
+    --primary-foreground: 0 0% 100%;
+    --secondary:          210 40% 93%;
+    --secondary-foreground: 222 47% 11%;
+    --muted:              210 40% 93%;
+    --muted-foreground:   215 16% 47%;
+    --accent:             210 40% 93%;
+    --accent-foreground:  222 47% 11%;
+    --destructive:        0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border:             214 32% 87%;
+    --input:              214 32% 87%;
+    --ring:               160 84% 33%;
+    --radius:             0.75rem;
   }
 
-  /* ── LIGHT MODE  ──────────────────────────────────────────────────────────── */
-  html:not(.dark) {
-    --background: 210 40% 98%;
-    --foreground: 222 47% 11%;
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 160 84% 33%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 94%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 94%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 210 40% 94%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 214 32% 85%;
-    --input: 214 32% 85%;
-    --ring: 160 84% 33%;
+  /* ── DARK ─────────────────────────────────────────────────────────────── */
+  .dark {
+    --background:         222.2 84% 4.9%;
+    --foreground:         210 40% 98%;
+    --card:               222.2 84% 4.9%;
+    --card-foreground:    210 40% 98%;
+    --popover:            222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary:            160 84% 39%;
+    --primary-foreground: 355.7 100% 97.3%;
+    --secondary:          217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted:              217.2 32.6% 17.5%;
+    --muted-foreground:   215 20.2% 65.1%;
+    --accent:             217.2 32.6% 17.5%;
+    --accent-foreground:  210 40% 98%;
+    --destructive:        0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border:             217.2 32.6% 17.5%;
+    --input:              217.2 32.6% 17.5%;
+    --ring:               160 84% 39%;
   }
 }
 
 @layer base {
   * { @apply border-border; }
-  body { @apply bg-background text-foreground; font-feature-settings: "rlig" 1, "calt" 1; }
+
+  html {
+    font-size: 16px;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   LIGHT MODE  —  Apple-style component overrides
-   Remaps dark-first hardcoded Tailwind classes to clean, high-contrast light
-   equivalents without touching page files.
+   LIGHT MODE — Component overrides
+   Page files use dark-first hardcoded Tailwind classes (bg-slate-800, etc.).
+   These rules remap them to clean light-theme equivalents without touching pages.
+   They only activate when the .dark class is absent (i.e. light mode = default).
 ───────────────────────────────────────────────────────────────────────────── */
 
-/* ── Base ── */
+/* ── Base body ── */
 html:not(.dark) body {
   background-color: hsl(220 14% 96%) !important;
   color: hsl(222 47% 11%) !important;
@@ -78,63 +89,63 @@ html:not(.dark) ::-webkit-scrollbar-thumb { background: hsl(214 20% 78%); border
 html:not(.dark) ::-webkit-scrollbar-thumb:hover { background: hsl(214 20% 65%); }
 
 /* ── Page / layout backgrounds ── */
-html:not(.dark) .bg-slate-950     { background-color: hsl(220 14% 96%)   !important; }
-html:not(.dark) .bg-slate-950\/95 { background-color: rgba(242,243,246,0.97) !important; }
-html:not(.dark) .bg-slate-950\/60 { background-color: rgba(242,243,246,0.85) !important; }
-html:not(.dark) .bg-slate-900     { background-color: hsl(0 0% 100%)     !important; }
-html:not(.dark) .bg-slate-900\/90 { background-color: rgba(255,255,255,0.97) !important; }
-html:not(.dark) .bg-slate-900\/80 { background-color: rgba(255,255,255,0.95) !important; }
-html:not(.dark) .bg-slate-900\/60 { background-color: rgba(248,250,252,0.9)  !important; }
-html:not(.dark) .bg-slate-900\/50 { background-color: rgba(248,250,252,0.85) !important; }
-html:not(.dark) .bg-slate-900\/30 { background-color: rgba(248,250,252,0.7)  !important; }
-html:not(.dark) .bg-slate-900\/20 { background-color: rgba(248,250,252,0.5)  !important; }
+html:not(.dark) .bg-slate-950     { background-color: hsl(220 14% 96%)         !important; }
+html:not(.dark) .bg-slate-950\/95 { background-color: rgba(242,243,246,0.97)   !important; }
+html:not(.dark) .bg-slate-950\/60 { background-color: rgba(242,243,246,0.85)   !important; }
+html:not(.dark) .bg-slate-900     { background-color: hsl(0 0% 100%)           !important; }
+html:not(.dark) .bg-slate-900\/90 { background-color: rgba(255,255,255,0.97)   !important; }
+html:not(.dark) .bg-slate-900\/80 { background-color: rgba(255,255,255,0.95)   !important; }
+html:not(.dark) .bg-slate-900\/60 { background-color: rgba(248,250,252,0.90)   !important; }
+html:not(.dark) .bg-slate-900\/50 { background-color: rgba(248,250,252,0.85)   !important; }
+html:not(.dark) .bg-slate-900\/30 { background-color: rgba(248,250,252,0.70)   !important; }
+html:not(.dark) .bg-slate-900\/20 { background-color: rgba(248,250,252,0.50)   !important; }
 
-/* ── Card backgrounds (white with Apple-style shadow) ── */
+/* ── Card backgrounds (white with soft shadow) ── */
 html:not(.dark) .bg-slate-800,
 html:not(.dark) .bg-slate-800\/80,
 html:not(.dark) .bg-slate-800\/60 {
   background-color: hsl(0 0% 100%) !important;
   box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.05) !important;
 }
-html:not(.dark) .bg-slate-800\/50 { background-color: rgba(255,255,255,0.85) !important; }
-html:not(.dark) .bg-slate-800\/40 { background-color: rgba(255,255,255,0.70) !important; }
-html:not(.dark) .bg-slate-800\/30 { background-color: rgba(255,255,255,0.55) !important; }
-html:not(.dark) .bg-slate-800\/20 { background-color: rgba(255,255,255,0.40) !important; }
-html:not(.dark) .bg-slate-800\/10 { background-color: rgba(255,255,255,0.25) !important; }
+html:not(.dark) .bg-slate-800\/50 { background-color: rgba(255,255,255,0.85)   !important; }
+html:not(.dark) .bg-slate-800\/40 { background-color: rgba(255,255,255,0.70)   !important; }
+html:not(.dark) .bg-slate-800\/30 { background-color: rgba(255,255,255,0.55)   !important; }
+html:not(.dark) .bg-slate-800\/20 { background-color: rgba(255,255,255,0.40)   !important; }
+html:not(.dark) .bg-slate-800\/10 { background-color: rgba(255,255,255,0.25)   !important; }
 
-/* ── Inner section / nested backgrounds ── */
-html:not(.dark) .bg-slate-700     { background-color: hsl(220 14% 93%)   !important; }
-html:not(.dark) .bg-slate-700\/50 { background-color: hsl(220 14% 93%)   !important; }
-html:not(.dark) .bg-slate-700\/40 { background-color: hsl(220 14% 94%)   !important; }
-html:not(.dark) .bg-slate-700\/30 { background-color: hsl(220 14% 95%)   !important; }
-html:not(.dark) .bg-slate-700\/20 { background-color: hsl(220 14% 96%)   !important; }
-html:not(.dark) .bg-slate-600     { background-color: hsl(214 20% 85%)   !important; }
-html:not(.dark) .bg-slate-600\/50 { background-color: hsl(214 20% 88%)   !important; }
-html:not(.dark) .bg-slate-500\/20 { background-color: hsl(214 14% 92%)   !important; }
+/* ── Inner / nested section backgrounds ── */
+html:not(.dark) .bg-slate-700     { background-color: hsl(220 14% 93%)         !important; }
+html:not(.dark) .bg-slate-700\/50 { background-color: hsl(220 14% 93%)         !important; }
+html:not(.dark) .bg-slate-700\/40 { background-color: hsl(220 14% 94%)         !important; }
+html:not(.dark) .bg-slate-700\/30 { background-color: hsl(220 14% 95%)         !important; }
+html:not(.dark) .bg-slate-700\/20 { background-color: hsl(220 14% 96%)         !important; }
+html:not(.dark) .bg-slate-600     { background-color: hsl(214 20% 85%)         !important; }
+html:not(.dark) .bg-slate-600\/50 { background-color: hsl(214 20% 88%)         !important; }
+html:not(.dark) .bg-slate-500\/20 { background-color: hsl(214 14% 92%)         !important; }
 
 /* ── Borders ── */
-html:not(.dark) .border-slate-700\/50 { border-color: hsl(214 20% 88%) !important; }
-html:not(.dark) .border-slate-700\/40 { border-color: hsl(214 20% 89%) !important; }
-html:not(.dark) .border-slate-700\/30 { border-color: hsl(214 20% 90%) !important; }
-html:not(.dark) .border-slate-700     { border-color: hsl(214 20% 85%) !important; }
-html:not(.dark) .border-slate-600     { border-color: hsl(214 20% 80%) !important; }
-html:not(.dark) .border-slate-600\/60 { border-color: hsl(214 20% 82%) !important; }
-html:not(.dark) .border-slate-600\/50 { border-color: hsl(214 20% 83%) !important; }
-html:not(.dark) .border-slate-600\/40 { border-color: hsl(214 20% 84%) !important; }
-html:not(.dark) .border-slate-500\/30 { border-color: hsl(214 18% 78%) !important; }
-html:not(.dark) .border-slate-500     { border-color: hsl(214 18% 74%) !important; }
-html:not(.dark) .border-slate-800\/50 { border-color: hsl(214 20% 90%) !important; }
+html:not(.dark) .border-slate-700\/50 { border-color: hsl(214 20% 88%)         !important; }
+html:not(.dark) .border-slate-700\/40 { border-color: hsl(214 20% 89%)         !important; }
+html:not(.dark) .border-slate-700\/30 { border-color: hsl(214 20% 90%)         !important; }
+html:not(.dark) .border-slate-700     { border-color: hsl(214 20% 85%)         !important; }
+html:not(.dark) .border-slate-600     { border-color: hsl(214 20% 80%)         !important; }
+html:not(.dark) .border-slate-600\/60 { border-color: hsl(214 20% 82%)         !important; }
+html:not(.dark) .border-slate-600\/50 { border-color: hsl(214 20% 83%)         !important; }
+html:not(.dark) .border-slate-600\/40 { border-color: hsl(214 20% 84%)         !important; }
+html:not(.dark) .border-slate-500\/30 { border-color: hsl(214 18% 78%)         !important; }
+html:not(.dark) .border-slate-500     { border-color: hsl(214 18% 74%)         !important; }
+html:not(.dark) .border-slate-800\/50 { border-color: hsl(214 20% 90%)         !important; }
 
 /* ── Text hierarchy ── */
-html:not(.dark) .text-white     { color: hsl(222 47% 10%) !important; }
-html:not(.dark) .text-slate-100 { color: hsl(222 47% 13%) !important; }
-html:not(.dark) .text-slate-200 { color: hsl(222 35% 22%) !important; }
-html:not(.dark) .text-slate-300 { color: hsl(222 22% 34%) !important; }
-html:not(.dark) .text-slate-400 { color: hsl(215 16% 46%) !important; }
-html:not(.dark) .text-slate-500 { color: hsl(215 13% 56%) !important; }
-html:not(.dark) .text-slate-600 { color: hsl(215 12% 48%) !important; }
+html:not(.dark) .text-white     { color: hsl(222 47% 10%)   !important; }
+html:not(.dark) .text-slate-100 { color: hsl(222 47% 13%)   !important; }
+html:not(.dark) .text-slate-200 { color: hsl(222 35% 22%)   !important; }
+html:not(.dark) .text-slate-300 { color: hsl(222 22% 34%)   !important; }
+html:not(.dark) .text-slate-400 { color: hsl(215 16% 46%)   !important; }
+html:not(.dark) .text-slate-500 { color: hsl(215 13% 48%)   !important; }
+html:not(.dark) .text-slate-600 { color: hsl(215 12% 40%)   !important; }
 
-/* ── Status badge text: *-300 shades are too pale on white — shift to *-700 ── */
+/* ── Status badge text: *-300 shades are too pale on white — shift to darker ── */
 html:not(.dark) .text-yellow-300  { color: hsl(32  95% 35%) !important; }
 html:not(.dark) .text-amber-300   { color: hsl(32  95% 35%) !important; }
 html:not(.dark) .text-orange-300  { color: hsl(22  90% 38%) !important; }
@@ -153,7 +164,7 @@ html:not(.dark) .text-pink-300    { color: hsl(330 65% 42%) !important; }
 html:not(.dark) .text-indigo-300  { color: hsl(238 60% 44%) !important; }
 html:not(.dark) .text-indigo-400  { color: hsl(238 58% 47%) !important; }
 
-/* ── Tinted card backgrounds: *-950/30 reads as near-black — remap to tinted whites ── */
+/* ── Tinted card backgrounds: *-950/30 reads near-black — remap to tinted whites ── */
 html:not(.dark) .bg-amber-950\/30    { background-color: hsl(48  90% 95%) !important; }
 html:not(.dark) .bg-emerald-950\/30  { background-color: hsl(152 60% 95%) !important; }
 html:not(.dark) .bg-emerald-950\/20  { background-color: hsl(152 60% 96%) !important; }
@@ -163,17 +174,22 @@ html:not(.dark) .bg-blue-950\/30     { background-color: hsl(214 80% 96%) !impor
 html:not(.dark) .bg-orange-950\/15   { background-color: hsl(24  80% 96%) !important; }
 html:not(.dark) .bg-violet-950\/20   { background-color: hsl(258 60% 97%) !important; }
 
-/* ── Status / alert tinted backgrounds that use /10 or /15 ── */
+/* ── Status / alert tinted backgrounds ── */
 html:not(.dark) .bg-yellow-500\/10  { background-color: hsl(48  90% 94%) !important; }
-html:not(.dark) .bg-yellow-500\/20  { background-color: hsl(48  90% 92%) !important; }
+html:not(.dark) .bg-yellow-500\/20  { background-color: hsl(48  90% 91%) !important; }
 html:not(.dark) .bg-amber-500\/10   { background-color: hsl(43  90% 94%) !important; }
 html:not(.dark) .bg-amber-500\/20   { background-color: hsl(43  90% 91%) !important; }
 html:not(.dark) .bg-orange-500\/10  { background-color: hsl(25  90% 95%) !important; }
+html:not(.dark) .bg-orange-500\/15  { background-color: hsl(25  90% 94%) !important; }
 html:not(.dark) .bg-red-500\/10     { background-color: hsl(0   72% 96%) !important; }
 html:not(.dark) .bg-red-400\/10     { background-color: hsl(0   72% 96%) !important; }
+html:not(.dark) .bg-emerald-500\/8  { background-color: hsl(152 60% 96%) !important; }
 html:not(.dark) .bg-emerald-500\/10 { background-color: hsl(152 60% 94%) !important; }
+html:not(.dark) .bg-emerald-500\/15 { background-color: hsl(152 60% 93%) !important; }
 html:not(.dark) .bg-emerald-500\/20 { background-color: hsl(152 60% 91%) !important; }
 html:not(.dark) .bg-green-500\/10   { background-color: hsl(142 60% 94%) !important; }
+html:not(.dark) .bg-green-500\/15   { background-color: hsl(142 60% 93%) !important; }
+html:not(.dark) .bg-blue-500\/8     { background-color: hsl(214 80% 97%) !important; }
 html:not(.dark) .bg-blue-500\/10    { background-color: hsl(214 80% 95%) !important; }
 html:not(.dark) .bg-blue-500\/15    { background-color: hsl(214 80% 94%) !important; }
 html:not(.dark) .bg-blue-500\/20    { background-color: hsl(214 80% 92%) !important; }
@@ -181,38 +197,45 @@ html:not(.dark) .bg-purple-500\/10  { background-color: hsl(270 55% 96%) !import
 html:not(.dark) .bg-purple-500\/15  { background-color: hsl(270 55% 94%) !important; }
 html:not(.dark) .bg-violet-500\/10  { background-color: hsl(258 60% 96%) !important; }
 html:not(.dark) .bg-violet-500\/15  { background-color: hsl(258 60% 94%) !important; }
-html:not(.dark) .bg-violet-500\/20  { background-color: hsl(258 60% 93%) !important; }
+html:not(.dark) .bg-violet-500\/20  { background-color: hsl(258 60% 92%) !important; }
 html:not(.dark) .bg-cyan-500\/10    { background-color: hsl(190 70% 95%) !important; }
 html:not(.dark) .bg-cyan-500\/20    { background-color: hsl(190 70% 92%) !important; }
 html:not(.dark) .bg-indigo-500\/20  { background-color: hsl(238 60% 95%) !important; }
 
 /* ── Tier badge backgrounds ── */
-html:not(.dark) .bg-cyan-500\/20   { background-color: hsl(190 70% 92%) !important; }
 html:not(.dark) .bg-yellow-500\/20 { background-color: hsl(48  90% 92%) !important; }
 html:not(.dark) .bg-slate-400\/20  { background-color: hsl(214 14% 92%) !important; }
 html:not(.dark) .bg-orange-500\/20 { background-color: hsl(25  90% 92%) !important; }
 
+/* ── My-team highlight ring ── */
+html:not(.dark) .ring-emerald-500\/15 { --tw-ring-color: hsl(152 60% 45% / 0.12) !important; }
+
 /* ── Hover states ── */
-html:not(.dark) .hover\:bg-slate-800:hover      { background-color: hsl(220 14% 93%) !important; }
-html:not(.dark) .hover\:bg-slate-800\/70:hover  { background-color: hsl(220 14% 94%) !important; }
-html:not(.dark) .hover\:bg-slate-700\/30:hover  { background-color: hsl(220 14% 93%) !important; }
-html:not(.dark) .hover\:bg-slate-700:hover      { background-color: hsl(220 14% 91%) !important; }
-html:not(.dark) .hover\:bg-slate-600\/50:hover  { background-color: hsl(214 20% 88%) !important; }
+html:not(.dark) .hover\:bg-slate-800:hover     { background-color: hsl(220 14% 93%) !important; }
+html:not(.dark) .hover\:bg-slate-800\/70:hover { background-color: hsl(220 14% 94%) !important; }
+html:not(.dark) .hover\:bg-slate-800\/80:hover { background-color: hsl(220 14% 93%) !important; }
+html:not(.dark) .hover\:bg-slate-700\/30:hover { background-color: hsl(220 14% 93%) !important; }
+html:not(.dark) .hover\:bg-slate-700:hover     { background-color: hsl(220 14% 91%) !important; }
+html:not(.dark) .hover\:bg-slate-600\/50:hover { background-color: hsl(214 20% 88%) !important; }
+html:not(.dark) .hover\:border-slate-600\/60:hover { border-color: hsl(214 20% 82%) !important; }
+
+/* ── Active states ── */
+html:not(.dark) .active\:bg-slate-700\/60:active { background-color: hsl(220 14% 91%) !important; }
 
 /* ── Divide colours ── */
 html:not(.dark) .divide-slate-700\/50 > :not([hidden]) ~ :not([hidden]) {
   border-color: hsl(214 20% 88% / 0.5) !important;
 }
 
-/* ── Modal backdrop ── */
-html:not(.dark) .bg-black\/70 { background-color: rgba(15,23,42,0.50) !important; }
-html:not(.dark) .bg-black\/50 { background-color: rgba(15,23,42,0.30) !important; }
+/* ── Modal / sheet backdrop ── */
+html:not(.dark) .bg-black\/70 { background-color: rgba(15,23,42,0.50)  !important; }
+html:not(.dark) .bg-black\/50 { background-color: rgba(15,23,42,0.30)  !important; }
 
 /* ── Dropdown / popover shells ── */
-html:not(.dark) [data-radix-popper-content-wrapper] .bg-slate-900  { background-color: hsl(0 0% 100%) !important; box-shadow: 0 4px 16px rgb(0 0 0 / 0.10) !important; }
+html:not(.dark) [data-radix-popper-content-wrapper] .bg-slate-900   { background-color: hsl(0 0% 100%) !important; box-shadow: 0 4px 16px rgb(0 0 0 / 0.10) !important; }
 html:not(.dark) [data-radix-popper-content-wrapper] .border-slate-700 { border-color: hsl(214 20% 86%) !important; }
-html:not(.dark) [data-radix-popper-content-wrapper] .text-slate-400 { color: hsl(215 16% 46%) !important; }
-html:not(.dark) [data-radix-popper-content-wrapper] .bg-slate-800  { background-color: hsl(220 14% 97%) !important; }
+html:not(.dark) [data-radix-popper-content-wrapper] .text-slate-400  { color: hsl(215 16% 46%)         !important; }
+html:not(.dark) [data-radix-popper-content-wrapper] .bg-slate-800    { background-color: hsl(220 14% 97%) !important; }
 
 /* ── Native form inputs ── */
 html:not(.dark) input[type="datetime-local"],
@@ -227,8 +250,8 @@ html:not(.dark) input[type="datetime-local"].bg-slate-900,
 html:not(.dark) select.bg-slate-700,
 html:not(.dark) select.bg-slate-800 {
   background-color: hsl(0 0% 100%) !important;
-  border-color: hsl(214 20% 84%) !important;
-  color: hsl(222 47% 11%) !important;
+  border-color: hsl(214 20% 84%)   !important;
+  color: hsl(222 47% 11%)          !important;
 }
 
 /* ── Navbar shadow ── */
@@ -237,13 +260,23 @@ html:not(.dark) .sticky.top-0 {
 }
 
 /* ── Placeholder text ── */
-html:not(.dark) ::placeholder { color: hsl(215 14% 62%) !important; }
+html:not(.dark) ::placeholder { color: hsl(215 14% 58%) !important; }
+
+/* ── Dashed borders (vacant slots, empty states) ── */
+html:not(.dark) .border-dashed.border-slate-700\/40 { border-color: hsl(214 20% 82%) !important; }
+
+/* ── Gradient backgrounds for tier headers ── */
+html:not(.dark) .from-cyan-500\/10  { --tw-gradient-from: hsl(190 70% 95%) !important; }
+html:not(.dark) .from-violet-500\/10{ --tw-gradient-from: hsl(258 60% 96%) !important; }
+html:not(.dark) .from-amber-500\/10 { --tw-gradient-from: hsl(43  90% 95%) !important; }
+html:not(.dark) .from-slate-500\/10 { --tw-gradient-from: hsl(214 14% 95%) !important; }
+html:not(.dark) .from-orange-500\/10{ --tw-gradient-from: hsl(25  90% 95%) !important; }
+html:not(.dark) .from-slate-700\/20 { --tw-gradient-from: hsl(220 14% 94%) !important; }
 
 /* ─────────────────────────────────────────────────────────────────────────────
    PWA / iOS SAFE AREA SUPPORT
-   viewportFit: 'cover' is set in layout.tsx so the app extends edge-to-edge.
-   These utilities push content away from the Dynamic Island, notch, and home
-   indicator using the env() safe-area-inset-* CSS environment variables.
+   viewportFit: 'cover' extends edge-to-edge on iPhones.
+   env() variables push content away from the notch and home indicator.
 ───────────────────────────────────────────────────────────────────────────── */
 
 /* Top navbar: sits below Dynamic Island / notch */
@@ -256,30 +289,22 @@ html:not(.dark) ::placeholder { color: hsl(215 14% 62%) !important; }
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* Team switcher bar: sticks just below the top navbar.
-   Must account for safe-area-inset-top so it isn't hidden behind
-   the navbar on iOS PWA (where the navbar is taller than h-14). */
+/* Team switcher bar: sticks just below the top navbar */
 .pwa-team-bar {
   position: sticky;
   top: calc(3.5rem + env(safe-area-inset-top, 0px));
   z-index: 30;
 }
 @media (min-width: 768px) {
-  /* Desktop uses the navbar dropdown instead */
-  .pwa-team-bar {
-    display: none;
-  }
+  .pwa-team-bar { display: none; }
 }
 
-/* Main content: leave room for the fixed top header + bottom nav on mobile */
+/* Main content: padding accounts for fixed header + bottom nav on mobile */
 .pwa-main {
-  /* 56px header + safe-area-top on mobile */
   padding-top: calc(3.5rem + env(safe-area-inset-top, 0px));
-  /* 64px tabs + up to 40px team strip + safe-area-bottom */
   padding-bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px));
 }
 @media (min-width: 768px) {
-  /* Desktop: standard top navbar (already inside flow), no bottom nav */
   .pwa-main {
     padding-top: 0;
     padding-bottom: 0;
@@ -287,18 +312,19 @@ html:not(.dark) ::placeholder { color: hsl(215 14% 62%) !important; }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   CUSTOM UTILITIES  (unchanged between themes)
+   CUSTOM UTILITIES  (theme-agnostic)
 ───────────────────────────────────────────────────────────────────────────── */
 @layer utilities {
   .glass-card {
-    @apply bg-slate-800/60 backdrop-blur-xl border border-slate-700/50;
+    @apply bg-card border border-border shadow-sm;
   }
   .gradient-text {
-    @apply bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent;
   }
-  .tier-diamond  { @apply bg-cyan-500/10  border-cyan-500/30  text-cyan-400;  }
-  .tier-platinum { @apply bg-slate-500/10 border-slate-500/30 text-slate-300; }
-  .tier-gold     { @apply bg-amber-500/10 border-amber-500/30 text-amber-400; }
-  .tier-silver   { @apply bg-gray-500/10  border-gray-500/30  text-gray-300;  }
-  .tier-bronze   { @apply bg-orange-500/10 border-orange-500/30 text-orange-400; }
+  /* Tier utility classes — background + border + text as a set */
+  .tier-diamond  { @apply bg-cyan-500/10   border-cyan-500/30   text-cyan-600;  }
+  .tier-platinum { @apply bg-violet-500/10 border-violet-500/30 text-violet-600; }
+  .tier-gold     { @apply bg-amber-500/10  border-amber-500/30  text-amber-600;  }
+  .tier-silver   { @apply bg-slate-500/10  border-slate-500/30  text-slate-600;  }
+  .tier-bronze   { @apply bg-orange-500/10 border-orange-500/30 text-orange-600; }
 }

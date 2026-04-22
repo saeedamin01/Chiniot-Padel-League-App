@@ -34,11 +34,11 @@ const navLinks = [
 ]
 
 const TIER_COLORS: Record<string, string> = {
-  Diamond:  'text-cyan-400 border-cyan-400/40 bg-cyan-400/10',
-  Platinum: 'text-violet-400 border-violet-400/40 bg-violet-400/10',
-  Gold:     'text-yellow-400 border-yellow-400/40 bg-yellow-400/10',
-  Silver:   'text-slate-300 border-slate-300/40 bg-slate-300/10',
-  Bronze:   'text-orange-400 border-orange-400/40 bg-orange-400/10',
+  Diamond:  'text-cyan-700   dark:text-cyan-400   border-cyan-400/40   bg-cyan-500/10',
+  Platinum: 'text-violet-700 dark:text-violet-400 border-violet-400/40 bg-violet-500/10',
+  Gold:     'text-amber-700  dark:text-yellow-400 border-yellow-400/40 bg-amber-500/10',
+  Silver:   'text-slate-600  dark:text-slate-300  border-slate-400/40  bg-slate-400/10',
+  Bronze:   'text-orange-700 dark:text-orange-400 border-orange-400/40 bg-orange-500/10',
 }
 
 function TeamSwitcher() {
@@ -72,23 +72,23 @@ function TeamSwitcher() {
           <ChevronDown className="h-3 w-3 opacity-60 shrink-0" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="center" className="w-56 bg-slate-900 border-slate-700">
-        <DropdownMenuLabel className="text-slate-400 text-xs">Switch Active Team</DropdownMenuLabel>
-        <DropdownMenuSeparator className="bg-slate-700" />
+      <DropdownMenuContent align="center" className="w-56">
+        <DropdownMenuLabel className="text-muted-foreground text-xs">Switch Active Team</DropdownMenuLabel>
+        <DropdownMenuSeparator />
         {teams.map(team => {
-          const tc = TIER_COLORS[team.tierName ?? ''] ?? 'text-slate-400'
+          const tc = TIER_COLORS[team.tierName ?? ''] ?? 'text-slate-500 dark:text-slate-400'
           const isActive = team.id === activeTeam.id
           return (
             <DropdownMenuItem
               key={team.id}
               onClick={() => switchTeam(team.id)}
-              className={`cursor-pointer gap-2 ${isActive ? 'bg-slate-800' : ''}`}
+              className={`cursor-pointer gap-2 ${isActive ? 'bg-emerald-500/10' : ''}`}
             >
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-white text-sm font-medium">{team.name}</span>
+                  <span className="text-foreground text-sm font-medium">{team.name}</span>
                   {isActive && (
-                    <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full border border-emerald-500/30">
+                    <span className="text-[10px] bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded-full border border-emerald-500/30">
                       Active
                     </span>
                   )}
@@ -100,8 +100,8 @@ function TeamSwitcher() {
             </DropdownMenuItem>
           )
         })}
-        <DropdownMenuSeparator className="bg-slate-700" />
-        <div className="px-2 py-1.5 text-[11px] text-slate-500 leading-tight">
+        <DropdownMenuSeparator />
+        <div className="px-2 py-1.5 text-[11px] text-muted-foreground leading-tight">
           Actions (challenges, freeze) apply to your active team.
         </div>
       </DropdownMenuContent>
@@ -127,12 +127,12 @@ export function Navbar({
   const isActive = (href: string) => pathname.startsWith(href)
 
   return (
-    <nav className="sticky top-0 z-40 border-b border-slate-700 bg-slate-950/95 backdrop-blur supports-[backdrop-filter]:bg-slate-950/60 pwa-header">
+    <nav className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 pwa-header shadow-sm">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-14 md:h-16 items-center justify-between">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 shrink-0">
-            <Trophy className="h-6 w-6 text-emerald-500" />
+            <Trophy className="h-6 w-6 text-emerald-600" />
             <span className="text-xl font-bold gradient-text">CPL</span>
           </Link>
 
@@ -161,7 +161,7 @@ export function Navbar({
             {/* User Dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-2 rounded-xl px-1.5 py-1 hover:bg-slate-800/80 dark:hover:bg-slate-800/80 hover:bg-slate-100/80 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50">
+                <button className="flex items-center gap-2 rounded-xl px-1.5 py-1 hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
                   <Avatar className="h-8 w-8 ring-2 ring-emerald-500/40 ring-offset-2 ring-offset-background transition-all">
                     <AvatarImage src={userAvatar} alt={userName} />
                     <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white text-sm font-bold tracking-wide select-none">

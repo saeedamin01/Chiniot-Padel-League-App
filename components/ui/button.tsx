@@ -5,27 +5,39 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium ring-offset-slate-950 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+  // Base: uses CSS-variable ring offset so it adapts to light/dark automatically
+  "inline-flex items-center justify-center whitespace-nowrap rounded-lg text-base font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
+        // Primary action — bright emerald, readable on both themes
         default:
-          "bg-emerald-500 text-slate-950 hover:bg-emerald-600 active:bg-emerald-700",
+          "bg-emerald-600 text-white hover:bg-emerald-700 active:bg-emerald-800",
+
+        // Destructive — red, works on both themes
         destructive:
-          "bg-red-600 text-slate-50 hover:bg-red-700 active:bg-red-800",
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90 active:bg-destructive/80",
+
+        // Outline — transparent bg with border, uses CSS vars
         outline:
-          "border border-slate-700 bg-slate-950 hover:bg-slate-900 text-slate-100",
+          "border border-border bg-background hover:bg-muted hover:text-foreground text-foreground",
+
+        // Secondary — subtle filled, uses CSS vars
         secondary:
-          "bg-slate-700 text-slate-100 hover:bg-slate-600 active:bg-slate-500",
+          "bg-secondary text-secondary-foreground hover:bg-secondary/70 active:bg-secondary/60",
+
+        // Ghost — no border, subtle hover
         ghost:
-          "hover:bg-slate-800 text-slate-100 active:bg-slate-700",
-        link: "text-emerald-500 underline-offset-4 hover:underline",
+          "hover:bg-accent hover:text-accent-foreground text-foreground active:bg-accent/70",
+
+        // Link — text-only
+        link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-10 px-4 py-2",
-        sm: "h-8 rounded-md px-3 text-xs",
-        lg: "h-12 rounded-lg px-8 text-base",
-        icon: "h-10 w-10",
+        default: "h-11 px-5 py-2.5",
+        sm:      "h-9 rounded-md px-3.5 text-sm",
+        lg:      "h-13 rounded-xl px-8 text-lg",
+        icon:    "h-11 w-11",
       },
     },
     defaultVariants: {
