@@ -8,9 +8,9 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Challenge, Team } from '@/types'
+import { Challenge, Team, MatchResult, DisputedScore } from '@/types'
 import { formatDate, formatDateTime, formatTimeAgo, isDeadlineExpired, hoursUntilDeadline } from '@/lib/utils'
-import { AlertTriangle, Trash2, Shield, RefreshCw, Check, X, Loader2, Calendar, MapPin, Pencil, Clock, History } from 'lucide-react'
+import { AlertTriangle, Trash2, Shield, RefreshCw, Check, X, Loader2, Calendar, MapPin, Pencil, Clock, History, Trophy } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { EVENT_LABELS, EVENT_COLOURS } from '@/lib/challenges/events'
 
@@ -28,6 +28,28 @@ interface ChallengeEvent {
 interface ChallengeRow extends Challenge {
   challenging_team?: Team & { player1?: { name: string }; player2?: { name: string } }
   challenged_team?: Team & { player1?: { name: string }; player2?: { name: string } }
+}
+
+interface DisputedMatchRow {
+  result_id: string
+  challenge_id: string
+  challenge_code: string
+  challenging_team_name: string
+  challenged_team_name: string
+  reported_by_team_id: string
+  original: {
+    set1_challenger: number | undefined
+    set1_challenged: number | undefined
+    set2_challenger: number | undefined
+    set2_challenged: number | undefined
+    supertiebreak_challenger?: number | null
+    supertiebreak_challenged?: number | null
+    winner_team_id: string
+    winner_name: string
+  }
+  disputed: DisputedScore & { winner_name: string }
+  disputed_at: string
+  dispute_flagged_at: string | null
 }
 
 export default function ChallengesPage() {
@@ -64,8 +86,16 @@ export default function ChallengesPage() {
   // Venues for edit form
   const [venues, setVenues] = useState<{ id: string; name: string; address?: string }[]>([])
 
+  // Disputed matches
+  const [disputedMatches, setDisputedMatches] = useState<DisputedMatchRow[]>([])
+  const [disputeResolveLoading, setDisputeResolveLoading] = useState<string | null>(null)
+  const [disputeForms, setDisputeForms] = useState<Record<string, {
+    s1ch: string; s1cd: string; s2ch: string; s2cd: string; tbch: string; tbcd: string; winnerTeamId: string; note: string
+  }>>({})
+
   useEffect(() => {
     loadChallenges()
+    loadDisputedMatches()
   }, [])
 
   async function loadChallenges() {
@@ -304,6 +334,109 @@ export default function ChallengesPage() {
     }
   }
 
+  async function loadDisputedMatches() {
+    try {
+      const { data: results } = await supabase
+        .from('match_results')
+        .select(`
+          id,
+          challenge_id,
+          reported_by_team_id,
+          winner_team_id,
+          set1_challenger, set1_challenged,
+          set2_challenger, set2_challenged,
+          supertiebreak_challenger, supertiebreak_challenged,
+          disputed_score,
+          disputed_at,
+          dispute_flagged_at,
+          dispute_resolved_at,
+          challenge:challenges(
+            challenge_code,
+            challenging_team_id,
+            challenged_team_id,
+            challenging_team:teams!challenging_team_id(name),
+            challenged_team:teams!challenged_team_id(name)
+          )
+        `)
+        .not('disputed_at', 'is', null)
+        .is('dispute_resolved_at', null)
+        .order('dispute_flagged_at', { ascending: false, nullsFirst: false })
+
+      if (!results) return
+
+      const rows: DisputedMatchRow[] = results.map((r: any) => {
+        const ch = r.challenge
+        const winnerIsChallenger = r.winner_team_id === ch.challenging_team_id
+        const dsWinnerIsChallenger = r.disputed_score?.winner_team_id === ch.challenging_team_id
+        return {
+          result_id: r.id,
+          challenge_id: r.challenge_id,
+          challenge_code: ch.challenge_code,
+          challenging_team_name: ch.challenging_team?.name ?? '—',
+          challenged_team_name: ch.challenged_team?.name ?? '—',
+          reported_by_team_id: r.reported_by_team_id,
+          original: {
+            set1_challenger: r.set1_challenger,
+            set1_challenged: r.set1_challenged,
+            set2_challenger: r.set2_challenger,
+            set2_challenged: r.set2_challenged,
+            supertiebreak_challenger: r.supertiebreak_challenger,
+            supertiebreak_challenged: r.supertiebreak_challenged,
+            winner_team_id: r.winner_team_id,
+            winner_name: winnerIsChallenger ? ch.challenging_team?.name : ch.challenged_team?.name,
+          },
+          disputed: {
+            ...r.disputed_score,
+            winner_name: dsWinnerIsChallenger ? ch.challenging_team?.name : ch.challenged_team?.name,
+          },
+          disputed_at: r.disputed_at,
+          dispute_flagged_at: r.dispute_flagged_at,
+          challenging_team_id: ch.challenging_team_id,
+          challenged_team_id: ch.challenged_team_id,
+        } as any
+      })
+      setDisputedMatches(rows)
+    } catch (err) {
+      console.error('Error loading disputed matches:', err)
+    }
+  }
+
+  async function handleAdminResolveDispute(resultId: string, challengeId: string) {
+    const form = disputeForms[resultId]
+    if (!form) return
+    if (!form.s1ch || !form.s1cd || !form.s2ch || !form.s2cd || !form.winnerTeamId) {
+      alert('Please fill in all scores and select a winner.'); return
+    }
+
+    setDisputeResolveLoading(resultId)
+    try {
+      const res = await fetch(`/api/matches/${resultId}/dispute/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'admin',
+          set1Challenger: parseInt(form.s1ch), set1Challenged: parseInt(form.s1cd),
+          set2Challenger: parseInt(form.s2ch), set2Challenged: parseInt(form.s2cd),
+          supertiebreakChallenger: form.tbch ? parseInt(form.tbch) : null,
+          supertiebreakChallenged: form.tbcd ? parseInt(form.tbcd) : null,
+          winnerTeamId: form.winnerTeamId,
+          adminNote: form.note || null,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { alert(data.error || 'Failed to resolve dispute'); return }
+      // Remove from local state
+      setDisputedMatches(prev => prev.filter(d => d.result_id !== resultId))
+      const newForms = { ...disputeForms }; delete newForms[resultId]; setDisputeForms(newForms)
+      loadChallenges()
+    } catch (err) {
+      console.error('Resolve dispute error:', err)
+      alert('An error occurred')
+    } finally {
+      setDisputeResolveLoading(null)
+    }
+  }
+
   const filteredChallenges = challenges.filter((c) => {
     if (filter === 'all') return true
     if (filter === 'overdue') return isDeadlineExpired(c.accept_deadline) && c.status !== 'played'
@@ -327,7 +460,7 @@ export default function ChallengesPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
         <Card className="bg-slate-800/60 border-slate-700 p-6">
           <div className="text-sm font-medium text-slate-400">Pending</div>
           <div className="text-3xl font-bold text-yellow-400 mt-2">{stats.pending}</div>
@@ -348,7 +481,157 @@ export default function ChallengesPage() {
           <div className="text-sm font-medium text-slate-400">Reschedule Approvals</div>
           <div className={`text-3xl font-bold mt-2 ${stats.reschedulePending > 0 ? 'text-purple-400' : 'text-slate-500'}`}>{stats.reschedulePending}</div>
         </Card>
+        <Card className={`p-6 ${disputedMatches.length > 0 ? 'bg-orange-500/10 border-orange-500/50' : 'bg-slate-800/60 border-slate-700'}`}>
+          <div className="text-sm font-medium text-slate-400">Score Disputes</div>
+          <div className={`text-3xl font-bold mt-2 ${disputedMatches.length > 0 ? 'text-orange-400' : 'text-slate-500'}`}>{disputedMatches.length}</div>
+        </Card>
       </div>
+
+      {/* ── Disputed Matches Section ── */}
+      {disputedMatches.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-orange-400" />
+            <h2 className="text-lg font-semibold text-white">Score Disputes — Awaiting Resolution</h2>
+            <span className="text-xs bg-orange-500/20 text-orange-300 border border-orange-500/30 px-2 py-0.5 rounded-full">
+              {disputedMatches.length}
+            </span>
+          </div>
+
+          {disputedMatches.map(dm => {
+            const form = disputeForms[dm.result_id] ?? { s1ch: '', s1cd: '', s2ch: '', s2cd: '', tbch: '', tbcd: '', winnerTeamId: '', note: '' }
+            const setForm = (patch: Partial<typeof form>) => setDisputeForms(prev => ({ ...prev, [dm.result_id]: { ...form, ...patch } }))
+            const isLoading = disputeResolveLoading === dm.result_id
+            const isFlagged = !!dm.dispute_flagged_at
+            const chId = (dm as any).challenging_team_id
+            const cdId = (dm as any).challenged_team_id
+
+            return (
+              <Card key={dm.result_id} className={`p-5 space-y-5 ${isFlagged ? 'bg-slate-800/60 border-orange-500/50' : 'bg-slate-800/60 border-orange-500/30'}`}>
+                {/* Header */}
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div>
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                      <code className="text-xs text-slate-400 bg-slate-700/50 px-2 py-0.5 rounded font-mono">{dm.challenge_code}</code>
+                      <Link href={`/challenges/${dm.challenge_id}`} className="text-white hover:text-orange-300 font-semibold text-sm transition-colors">
+                        {dm.challenging_team_name}
+                      </Link>
+                      <span className="text-slate-500 text-xs">vs</span>
+                      <Link href={`/challenges/${dm.challenge_id}`} className="text-white hover:text-orange-300 font-semibold text-sm transition-colors">
+                        {dm.challenged_team_name}
+                      </Link>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Disputed {new Date(dm.disputed_at).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}{' '}
+                      at {new Date(dm.disputed_at).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                      {isFlagged && (
+                        <span className="ml-2 text-orange-400 font-medium">· Escalated — window expired</span>
+                      )}
+                    </p>
+                  </div>
+                  {isFlagged && (
+                    <span className="flex items-center gap-1.5 text-xs text-orange-400 bg-orange-500/15 border border-orange-500/30 px-2 py-1 rounded-full shrink-0">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      Needs admin
+                    </span>
+                  )}
+                </div>
+
+                {/* Both score versions */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-3 bg-slate-700/40 border border-slate-600 rounded-lg space-y-2">
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                      Original — {dm.reported_by_team_id === chId ? dm.challenging_team_name : dm.challenged_team_name}
+                    </p>
+                    <div className="flex gap-3 text-sm text-slate-200 flex-wrap">
+                      <span>S1: {dm.original.set1_challenger ?? '—'}–{dm.original.set1_challenged ?? '—'}</span>
+                      <span>S2: {dm.original.set2_challenger ?? '—'}–{dm.original.set2_challenged ?? '—'}</span>
+                      {dm.original.supertiebreak_challenger != null && (
+                        <span>TB: {dm.original.supertiebreak_challenger}–{dm.original.supertiebreak_challenged}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+                      <Trophy className="h-3 w-3" /> {dm.original.winner_name} wins
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-orange-500/10 border border-orange-500/30 rounded-lg space-y-2">
+                    <p className="text-xs font-semibold text-orange-400 uppercase tracking-wide">
+                      Counter — {dm.reported_by_team_id === chId ? dm.challenged_team_name : dm.challenging_team_name}
+                    </p>
+                    <div className="flex gap-3 text-sm text-white flex-wrap">
+                      <span>S1: {dm.disputed.set1_challenger}–{dm.disputed.set1_challenged}</span>
+                      <span>S2: {dm.disputed.set2_challenger}–{dm.disputed.set2_challenged}</span>
+                      {dm.disputed.supertiebreak_challenger != null && (
+                        <span>TB: {dm.disputed.supertiebreak_challenger}–{dm.disputed.supertiebreak_challenged}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+                      <Trophy className="h-3 w-3" /> {dm.disputed.winner_name} wins
+                    </div>
+                  </div>
+                </div>
+
+                {/* Admin final score form */}
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Set Final Score</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {[
+                      { label: 'Set 1 Ch', key: 's1ch' }, { label: 'Set 1 Cd', key: 's1cd' },
+                      { label: 'Set 2 Ch', key: 's2ch' }, { label: 'Set 2 Cd', key: 's2cd' },
+                      { label: 'TB Ch', key: 'tbch' }, { label: 'TB Cd', key: 'tbcd' },
+                    ].map(({ label, key }) => (
+                      <div key={key}>
+                        <label className="text-[10px] text-slate-500 block mb-1">{label}</label>
+                        <input
+                          type="number" min="0" max="99"
+                          value={(form as any)[key]}
+                          onChange={e => setForm({ [key]: e.target.value } as any)}
+                          placeholder="—"
+                          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-sm text-center focus:outline-none focus:border-orange-500 h-9"
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-slate-500 block mb-1">Winner</label>
+                    <select
+                      value={form.winnerTeamId}
+                      onChange={e => setForm({ winnerTeamId: e.target.value })}
+                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500 h-10"
+                    >
+                      <option value="">Select winner…</option>
+                      <option value={chId}>{dm.challenging_team_name}</option>
+                      <option value={cdId}>{dm.challenged_team_name}</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-slate-500 block mb-1">Admin note (logged)</label>
+                    <input
+                      type="text"
+                      value={form.note}
+                      onChange={e => setForm({ note: e.target.value })}
+                      placeholder="e.g. Reviewed footage — confirmed challenger's score is correct"
+                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500 h-9 placeholder-slate-500"
+                    />
+                  </div>
+
+                  <Button
+                    onClick={() => handleAdminResolveDispute(dm.result_id, dm.challenge_id)}
+                    disabled={isLoading || !form.winnerTeamId}
+                    className="w-full bg-orange-500 hover:bg-orange-600 h-10"
+                  >
+                    {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Check className="h-4 w-4 mr-2" />}
+                    Set Final Score &amp; Update Ladder
+                  </Button>
+                </div>
+              </Card>
+            )
+          })}
+        </div>
+      )}
 
       {/* ── Reschedule Approval Section ── */}
       {challenges.filter(c => c.status === 'reschedule_pending_admin').length > 0 && (

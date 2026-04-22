@@ -59,6 +59,7 @@ export interface LeagueSettings {
   result_report_hours: number
   result_verify_hours: number
   result_verify_minutes: number
+  dispute_window_minutes: number   // Phase 6 — minutes reporter has to accept counter-score
   freeze_immediate_drop: number
   freeze_interval_days: number
   freeze_interval_drop: number
@@ -194,6 +195,16 @@ export interface Challenge {
   venue?: Venue
 }
 
+export interface DisputedScore {
+  set1_challenger: number
+  set1_challenged: number
+  set2_challenger: number
+  set2_challenged: number
+  supertiebreak_challenger?: number | null
+  supertiebreak_challenged?: number | null
+  winner_team_id: string
+}
+
 export interface MatchResult {
   id: string
   challenge_id: string
@@ -214,6 +225,12 @@ export interface MatchResult {
   verify_deadline?: string
   verified_at?: string
   auto_verified: boolean
+  // Phase 6 — dispute fields
+  disputed_score?: DisputedScore | null
+  disputed_at?: string | null
+  dispute_resolved_by?: string | null
+  dispute_resolved_at?: string | null
+  dispute_flagged_at?: string | null
   created_at: string
   // Joined
   winner_team?: Team

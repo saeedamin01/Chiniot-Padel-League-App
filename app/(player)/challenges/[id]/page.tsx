@@ -156,6 +156,12 @@ export default function ChallengeDetailPage() {
   const [scoreState, setScoreState] = useState({ s1ch: '', s1cd: '', s2ch: '', s2cd: '', tbch: '', tbcd: '' })
   const [scoreSubmitting, setScoreSubmitting] = useState(false)
 
+  // Dispute flow
+  const [disputeModalOpen, setDisputeModalOpen] = useState(false)
+  const [disputeScore, setDisputeScore] = useState({ s1ch: '', s1cd: '', s2ch: '', s2cd: '', tbch: '', tbcd: '' })
+  const [disputeSubmitting, setDisputeSubmitting] = useState(false)
+  const [acceptDisputeLoading, setAcceptDisputeLoading] = useState(false)
+
   const supabase = createClient()
 
   const fetchChallenge = useCallback(async () => {
@@ -225,6 +231,14 @@ export default function ChallengeDetailPage() {
             body: JSON.stringify({ action: 'confirm' }),
           }).catch(() => {})
         }
+      }
+
+      // Auto-flag disputes whose window has expired (fire-and-forget)
+      const mr0 = Array.isArray(challengeData.match_result)
+        ? challengeData.match_result[0]
+        : challengeData.match_result
+      if (mr0?.disputed_at && !mr0?.dispute_resolved_at && !mr0?.dispute_flagged_at) {
+        fetch(`/api/matches/${mr0.id}/dispute/flag`, { method: 'POST' }).catch(() => {})
       }
 
       // Normalise 1-to-many PostgREST arrays
@@ -594,6 +608,79 @@ export default function ChallengeDetailPage() {
       await fetchChallenge()
     } catch { toast.error('An error occurred') }
     finally { setScoreSubmitting(false) }
+  }
+
+  // ── Submit dispute score (non-reporter enters their version) ─────────────
+  const handleSubmitDisputeScore = async () => {
+    if (!challenge?.match_result) return
+    const mr = challenge.match_result
+    const { s1ch, s1cd, s2ch, s2cd, tbch, tbcd } = disputeScore
+    if (!s1ch || !s1cd || !s2ch || !s2cd) { toast.error('Enter scores for both sets'); return }
+
+    const n = (v: string) => parseInt(v, 10)
+    const set1ChWon = n(s1ch) > n(s1cd)
+    const set2ChWon = n(s2ch) > n(s2cd)
+    const chSets = (set1ChWon ? 1 : 0) + (set2ChWon ? 1 : 0)
+    const cdSets = ((!set1ChWon) ? 1 : 0) + ((!set2ChWon) ? 1 : 0)
+    const needsTB = chSets === 1 && cdSets === 1
+    if (needsTB && (!tbch || !tbcd)) { toast.error('Sets are 1-1 — enter the super tiebreak scores'); return }
+
+    const disputingTeamId = userTeamIds.find(id =>
+      (id === challenge.challenging_team_id || id === challenge.challenged_team_id) &&
+      id !== mr.reported_by_team_id
+    )
+    if (!disputingTeamId) { toast.error('Could not determine your team'); return }
+
+    const winnerTeamId = chSets >= 2
+      ? challenge.challenging_team_id
+      : needsTB
+        ? (n(tbch) > n(tbcd) ? challenge.challenging_team_id : challenge.challenged_team_id)
+        : challenge.challenged_team_id
+
+    setDisputeSubmitting(true)
+    try {
+      const res = await fetch(`/api/matches/${mr.id}/dispute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          teamId: disputingTeamId,
+          set1Challenger: n(s1ch), set1Challenged: n(s1cd),
+          set2Challenger: n(s2ch), set2Challenged: n(s2cd),
+          supertiebreakChallenger: needsTB ? n(tbch) : null,
+          supertiebreakChallenged: needsTB ? n(tbcd) : null,
+          winnerTeamId,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error || 'Failed to file dispute'); return }
+      toast.success('Dispute filed — the opposing team has been notified to review your score.')
+      setDisputeModalOpen(false)
+      setDisputeScore({ s1ch: '', s1cd: '', s2ch: '', s2cd: '', tbch: '', tbcd: '' })
+      await fetchChallenge()
+    } catch { toast.error('An error occurred') }
+    finally { setDisputeSubmitting(false) }
+  }
+
+  // ── Accept disputed score (original reporter agrees with counter-score) ───
+  const handleAcceptDisputedScore = async () => {
+    if (!challenge?.match_result) return
+    const mr = challenge.match_result
+    const myTeamId = userTeamIds.find(id => id === mr.reported_by_team_id)
+    if (!myTeamId) { toast.error('Only the original score reporter can accept the counter-score'); return }
+
+    setAcceptDisputeLoading(true)
+    try {
+      const res = await fetch(`/api/matches/${mr.id}/dispute/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'accept', teamId: myTeamId }),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error || 'Failed to accept score'); return }
+      toast.success('Score agreed — the ladder has been updated!')
+      await fetchChallenge()
+    } catch { toast.error('An error occurred') }
+    finally { setAcceptDisputeLoading(false) }
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -1526,24 +1613,96 @@ export default function ChallengeDetailPage() {
         </Card>
       )}
 
-      {/* ── Match Result + Verify/Dispute ── */}
+      {/* ── Match Result + Verify / Dispute ── */}
       {challenge.match_result && (() => {
         const mr = challenge.match_result
         const isReporter = userTeamIds.includes(mr.reported_by_team_id)
-        const canVerify = !mr.verified_at && !isReporter && challenge.status === 'played'
-        const isVerified = !!mr.verified_at || mr.auto_verified
+        const isInvolved = isChallengingTeam || isChallengedTeam
+
+        const isVerified = !!(mr.verified_at || mr.auto_verified || mr.dispute_resolved_at)
+        const hasActiveDispute = !!(mr.disputed_at && !mr.dispute_resolved_at)
+        const isFlaggedForAdmin = !!(mr.dispute_flagged_at && !mr.dispute_resolved_at)
+
+        // Who can verify: non-reporter, not yet disputed or verified
+        const canVerify = !mr.verified_at && !mr.auto_verified && !mr.disputed_at && !isReporter && challenge.status === 'played'
+        // Who can dispute: non-reporter, not yet disputed, not yet verified
+        const canDispute = !mr.verified_at && !mr.auto_verified && !mr.disputed_at && !isReporter && challenge.status === 'played'
+        // Reporter can accept disputed score
+        const canAcceptDispute = hasActiveDispute && isReporter && !isFlaggedForAdmin
+
+        const scoreRowBg = (disputed: boolean) =>
+          disputed ? 'bg-orange-500/10 border border-orange-500/20' : 'bg-slate-700/30'
+
+        const ScoreDisplay = ({ scores, label, variant }: {
+          scores: { set1_challenger: number | undefined; set1_challenged: number | undefined; set2_challenger: number | undefined; set2_challenged: number | undefined; supertiebreak_challenger?: number | null; supertiebreak_challenged?: number | null; winner_team_id?: string }
+          label: string
+          variant: 'original' | 'disputed' | 'final'
+        }) => {
+          const colourMap = { original: 'text-slate-300', disputed: 'text-orange-300', final: 'text-emerald-300' } as const
+          const bgMap = { original: 'bg-slate-700/30', disputed: 'bg-orange-500/10 border border-orange-500/20', final: 'bg-emerald-500/10 border border-emerald-500/20' } as const
+          const winnerTeamName = scores.winner_team_id === challenge.challenging_team_id
+            ? challenge.challenging_team?.name
+            : scores.winner_team_id === challenge.challenged_team_id
+              ? challenge.challenged_team?.name
+              : null
+
+          return (
+            <div className={`rounded-xl p-4 space-y-3 ${bgMap[variant]}`}>
+              <p className={`text-xs font-semibold uppercase tracking-wide ${colourMap[variant]}`}>{label}</p>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                {[
+                  { lbl: 'Set 1', ch: scores.set1_challenger, cd: scores.set1_challenged },
+                  { lbl: 'Set 2', ch: scores.set2_challenger, cd: scores.set2_challenged },
+                  ...(scores.supertiebreak_challenger != null
+                    ? [{ lbl: 'Super TB', ch: scores.supertiebreak_challenger ?? undefined, cd: scores.supertiebreak_challenged ?? undefined }]
+                    : []),
+                ].map(({ lbl, ch, cd }) => (
+                  <div key={lbl} className="p-2 bg-black/20 rounded-lg">
+                    <p className="text-[10px] text-slate-400 mb-1">{lbl}</p>
+                    <p className="text-lg font-bold text-white">{ch ?? '—'}–{cd ?? '—'}</p>
+                    <p className="text-[9px] text-slate-500">Ch–Cd</p>
+                  </div>
+                ))}
+              </div>
+              {winnerTeamName && (
+                <div className="flex items-center gap-2">
+                  <Trophy className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <p className="text-xs text-emerald-400 font-semibold">{winnerTeamName} wins</p>
+                </div>
+              )}
+            </div>
+          )
+        }
 
         return (
-          <Card className={`border p-6 space-y-4 ${isVerified ? 'bg-emerald-500/5 border-emerald-500/30' : 'bg-slate-800/60 border-slate-700/50'}`}>
+          <Card className={`border p-6 space-y-4 ${
+            isVerified ? 'bg-emerald-500/5 border-emerald-500/30'
+            : isFlaggedForAdmin ? 'bg-red-500/5 border-red-500/30'
+            : hasActiveDispute ? 'bg-orange-500/5 border-orange-500/30'
+            : 'bg-slate-800/60 border-slate-700/50'
+          }`}>
+            {/* Header */}
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-white">Match Result</h3>
               {isVerified && (
                 <span className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-1 rounded-full">
                   <CheckCircle className="h-3.5 w-3.5" />
-                  {mr.auto_verified ? 'Auto-verified' : 'Verified'}
+                  {mr.dispute_resolved_at ? 'Dispute Resolved' : mr.auto_verified ? 'Auto-verified' : 'Verified'}
                 </span>
               )}
-              {!isVerified && challenge.status === 'played' && (
+              {isFlaggedForAdmin && (
+                <span className="flex items-center gap-1.5 text-xs text-red-400 bg-red-500/10 border border-red-500/30 px-2 py-1 rounded-full">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Under Admin Review
+                </span>
+              )}
+              {hasActiveDispute && !isFlaggedForAdmin && (
+                <span className="flex items-center gap-1.5 text-xs text-orange-400 bg-orange-500/10 border border-orange-500/30 px-2 py-1 rounded-full">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Score Disputed
+                </span>
+              )}
+              {!isVerified && !hasActiveDispute && challenge.status === 'played' && (
                 <span className="flex items-center gap-1.5 text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/30 px-2 py-1 rounded-full">
                   <Clock className="h-3.5 w-3.5" />
                   Pending verification
@@ -1551,35 +1710,74 @@ export default function ChallengeDetailPage() {
               )}
             </div>
 
-            {/* Scores */}
-            <div className="grid grid-cols-3 gap-4 text-center">
-              {[
-                { label: 'Set 1', ch: mr.set1_challenger, cd: mr.set1_challenged },
-                { label: 'Set 2', ch: mr.set2_challenger, cd: mr.set2_challenged },
-                ...(mr.supertiebreak_challenger != null ? [{ label: 'Super TB', ch: mr.supertiebreak_challenger, cd: mr.supertiebreak_challenged }] : []),
-              ].map(({ label, ch, cd }) => (
-                <div key={label} className="p-2 bg-slate-700/30 rounded-lg">
-                  <p className="text-xs text-slate-400 mb-1">{label}</p>
-                  <p className="text-xl font-bold text-white">{ch ?? '—'}–{cd ?? '—'}</p>
-                  <p className="text-[10px] text-slate-500">Ch — Cd</p>
+            {/* ── No active dispute: show submitted score ── */}
+            {!hasActiveDispute && (
+              <ScoreDisplay
+                scores={{
+                  set1_challenger: mr.set1_challenger,
+                  set1_challenged: mr.set1_challenged,
+                  set2_challenger: mr.set2_challenger,
+                  set2_challenged: mr.set2_challenged,
+                  supertiebreak_challenger: mr.supertiebreak_challenger,
+                  supertiebreak_challenged: mr.supertiebreak_challenged,
+                  winner_team_id: mr.winner_team_id,
+                }}
+                label={isVerified ? 'Final Score' : `Reported by ${mr.reported_by_team_id === challenge.challenging_team_id ? challenge.challenging_team?.name : challenge.challenged_team?.name}`}
+                variant={isVerified ? 'final' : 'original'}
+              />
+            )}
+
+            {/* ── Active dispute: show both versions side by side ── */}
+            {hasActiveDispute && mr.disputed_score && (
+              <div className="space-y-3">
+                <ScoreDisplay
+                  scores={{
+                    set1_challenger: mr.set1_challenger,
+                    set1_challenged: mr.set1_challenged,
+                    set2_challenger: mr.set2_challenger,
+                    set2_challenged: mr.set2_challenged,
+                    supertiebreak_challenger: mr.supertiebreak_challenger,
+                    supertiebreak_challenged: mr.supertiebreak_challenged,
+                    winner_team_id: mr.winner_team_id,
+                  }}
+                  label={`Originally reported by ${mr.reported_by_team_id === challenge.challenging_team_id ? challenge.challenging_team?.name : challenge.challenged_team?.name}`}
+                  variant="original"
+                />
+                <div className="flex items-center gap-2">
+                  <div className="h-px flex-1 bg-orange-500/30" />
+                  <span className="text-xs text-orange-400 font-semibold">DISPUTED — COUNTER-SCORE</span>
+                  <div className="h-px flex-1 bg-orange-500/30" />
                 </div>
-              ))}
-            </div>
-
-            {/* Winner */}
-            <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
-              <Trophy className="h-4 w-4 text-emerald-400 flex-shrink-0" />
-              <div>
-                <p className="text-xs text-slate-400">Winner</p>
-                <p className="font-semibold text-emerald-400">
-                  {mr.winner_team_id === challenge.challenging_team_id
-                    ? challenge.challenging_team?.name
-                    : challenge.challenged_team?.name}
-                </p>
+                <ScoreDisplay
+                  scores={{
+                    set1_challenger: mr.disputed_score.set1_challenger,
+                    set1_challenged: mr.disputed_score.set1_challenged,
+                    set2_challenger: mr.disputed_score.set2_challenger,
+                    set2_challenged: mr.disputed_score.set2_challenged,
+                    supertiebreak_challenger: mr.disputed_score.supertiebreak_challenger,
+                    supertiebreak_challenged: mr.disputed_score.supertiebreak_challenged,
+                    winner_team_id: mr.disputed_score.winner_team_id,
+                  }}
+                  label={`Counter-score by ${mr.reported_by_team_id === challenge.challenging_team_id ? challenge.challenged_team?.name : challenge.challenging_team?.name}`}
+                  variant="disputed"
+                />
               </div>
-            </div>
+            )}
 
-            {/* Verify countdown (non-reporter, not yet verified) */}
+            {/* ── Flagged for admin review ── */}
+            {isFlaggedForAdmin && (
+              <div className="flex items-start gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
+                <AlertTriangle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-red-300 text-sm">Escalated to Admin</p>
+                  <p className="text-red-200/70 text-xs mt-0.5">
+                    The resolution window expired without agreement. An admin will review both scores and set the final result.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* ── Verify countdown (non-reporter, no dispute, not yet verified) ── */}
             {canVerify && mr.verify_deadline && (
               <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
                 <CountdownDisplay deadline={mr.verify_deadline} label="Time to verify" />
@@ -1589,8 +1787,8 @@ export default function ChallengeDetailPage() {
               </div>
             )}
 
-            {/* Verify / Dispute buttons (non-reporter only) */}
-            {canVerify && (
+            {/* ── Verify + Dispute buttons (non-reporter, no dispute filed yet) ── */}
+            {canVerify && isInvolved && (
               <div className="flex gap-2 pt-2">
                 <Button
                   onClick={() => handleVerify('verify')}
@@ -1601,19 +1799,46 @@ export default function ChallengeDetailPage() {
                   Verify Result
                 </Button>
                 <Button
-                  onClick={() => handleVerify('dispute')}
+                  onClick={() => { setDisputeModalOpen(true); setDisputeScore({ s1ch: '', s1cd: '', s2ch: '', s2cd: '', tbch: '', tbcd: '' }) }}
                   disabled={actionLoading}
                   variant="outline"
-                  className="flex-1 border-red-500/40 text-red-400 hover:bg-red-500/10"
+                  className="flex-1 border-orange-500/40 text-orange-400 hover:bg-orange-500/10"
                 >
                   <AlertTriangle className="h-4 w-4 mr-2" />
-                  Dispute
+                  Dispute Score
                 </Button>
               </div>
             )}
 
-            {/* Reporter waiting message */}
-            {!isVerified && isReporter && challenge.status === 'played' && (
+            {/* ── Reporter: accept disputed counter-score ── */}
+            {canAcceptDispute && isInvolved && (
+              <div className="space-y-3 pt-1">
+                <p className="text-sm text-orange-200/80">
+                  If their counter-score is correct, you can accept it below and the ladder will be updated accordingly.
+                </p>
+                <Button
+                  onClick={handleAcceptDisputedScore}
+                  disabled={acceptDisputeLoading}
+                  className="w-full bg-orange-500 hover:bg-orange-600 h-11"
+                >
+                  {acceptDisputeLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Check className="h-4 w-4 mr-2" />}
+                  Accept Their Score
+                </Button>
+              </div>
+            )}
+
+            {/* ── Disputer waiting message (dispute filed, not flagged yet) ── */}
+            {hasActiveDispute && !isReporter && !isFlaggedForAdmin && isInvolved && (
+              <div className="flex items-center gap-2 p-3 bg-orange-500/10 border border-orange-500/20 rounded-lg">
+                <Clock className="h-4 w-4 text-orange-400 flex-shrink-0" />
+                <p className="text-orange-300 text-sm">
+                  Waiting for the opposing team to accept your counter-score. If they don't respond in time, an admin will be notified.
+                </p>
+              </div>
+            )}
+
+            {/* ── Reporter waiting (no dispute) ── */}
+            {!isVerified && !hasActiveDispute && isReporter && challenge.status === 'played' && (
               <div className="flex items-center gap-2 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
                 <Clock className="h-4 w-4 text-blue-400 flex-shrink-0" />
                 <p className="text-blue-300 text-sm">
@@ -1722,6 +1947,130 @@ export default function ChallengeDetailPage() {
                 </Button>
               </div>
               <p className="text-xs text-slate-500 text-center pb-1">The opposing team will be asked to verify this result.</p>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── Dispute Score Modal ── */}
+      {disputeModalOpen && challenge?.match_result && (() => {
+        const mr = challenge.match_result
+        const { s1ch, s1cd, s2ch, s2cd, tbch, tbcd } = disputeScore
+        const n = (v: string) => parseInt(v, 10) || 0
+        const set1ChWon = s1ch && s1cd ? n(s1ch) > n(s1cd) : null
+        const set2ChWon = s2ch && s2cd ? n(s2ch) > n(s2cd) : null
+        const chSets = (set1ChWon ? 1 : 0) + (set2ChWon ? 1 : 0)
+        const cdSets = ((set1ChWon === false) ? 1 : 0) + ((set2ChWon === false) ? 1 : 0)
+        const needsTB = s1ch && s1cd && s2ch && s2cd && chSets === 1 && cdSets === 1
+        const winner = chSets >= 2 ? challenge.challenging_team?.name
+          : cdSets >= 2 ? challenge.challenged_team?.name
+          : needsTB && tbch && tbcd ? (n(tbch) > n(tbcd) ? challenge.challenging_team?.name : challenge.challenged_team?.name)
+          : null
+
+        const setDs = (field: keyof typeof disputeScore) => (e: React.ChangeEvent<HTMLInputElement>) =>
+          setDisputeScore(prev => ({ ...prev, [field]: e.target.value }))
+
+        const DsRow = ({ label, chField, cdField }: { label: string; chField: keyof typeof disputeScore; cdField: keyof typeof disputeScore }) => (
+          <div className="flex items-center gap-3">
+            <span className="text-slate-400 text-xs font-semibold w-8 shrink-0 text-center">{label}</span>
+            <div className="flex items-center gap-2 flex-1">
+              <div className="flex-1">
+                <p className="text-xs text-slate-400 mb-1 truncate text-center font-medium">{challenge.challenging_team?.name}</p>
+                <Input type="number" min="0" max="99" inputMode="numeric"
+                  value={disputeScore[chField]} onChange={setDs(chField)}
+                  className="bg-slate-700 border-slate-600 text-white text-center h-14 text-2xl font-bold" placeholder="0" />
+              </div>
+              <span className="text-slate-500 font-bold text-xl mt-6 shrink-0">–</span>
+              <div className="flex-1">
+                <p className="text-xs text-slate-400 mb-1 truncate text-center font-medium">{challenge.challenged_team?.name}</p>
+                <Input type="number" min="0" max="99" inputMode="numeric"
+                  value={disputeScore[cdField]} onChange={setDs(cdField)}
+                  className="bg-slate-700 border-slate-600 text-white text-center h-14 text-2xl font-bold" placeholder="0" />
+              </div>
+            </div>
+          </div>
+        )
+
+        return (
+          <div className="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center"
+            onClick={e => { if (e.target === e.currentTarget) setDisputeModalOpen(false) }}>
+            <div className="w-full sm:max-w-sm bg-slate-800 border border-orange-500/40 rounded-t-2xl sm:rounded-2xl p-5 space-y-5 max-h-[92vh] overflow-y-auto">
+              <div className="flex justify-center sm:hidden">
+                <div className="w-10 h-1 bg-slate-600 rounded-full" />
+              </div>
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-orange-400" />
+                    <h3 className="font-bold text-white text-lg">Dispute Score</h3>
+                  </div>
+                  <p className="text-slate-400 text-sm mt-0.5">
+                    Enter the correct score as you remember it.
+                  </p>
+                </div>
+                <button onClick={() => setDisputeModalOpen(false)} className="text-slate-400 hover:text-white p-2 -mr-1 rounded-lg" aria-label="Close">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Their submitted score (for reference) */}
+              <div className="p-3 bg-slate-700/40 border border-slate-600 rounded-xl">
+                <p className="text-xs text-slate-400 mb-2 font-medium">Their submitted score (for reference)</p>
+                <div className="flex gap-3 text-center justify-center text-sm text-slate-300">
+                  <span>Set 1: {mr.set1_challenger ?? '—'}–{mr.set1_challenged ?? '—'}</span>
+                  <span className="text-slate-600">|</span>
+                  <span>Set 2: {mr.set2_challenger ?? '—'}–{mr.set2_challenged ?? '—'}</span>
+                  {mr.supertiebreak_challenger != null && (
+                    <>
+                      <span className="text-slate-600">|</span>
+                      <span>TB: {mr.supertiebreak_challenger}–{mr.supertiebreak_challenged}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <DsRow label="Set 1" chField="s1ch" cdField="s1cd" />
+                <DsRow label="Set 2" chField="s2ch" cdField="s2cd" />
+                {needsTB && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="h-px flex-1 bg-slate-600" />
+                      <span className="text-xs text-orange-400 font-semibold tracking-wide">SUPER TIEBREAK</span>
+                      <div className="h-px flex-1 bg-slate-600" />
+                    </div>
+                    <DsRow label="TB" chField="tbch" cdField="tbcd" />
+                  </div>
+                )}
+              </div>
+
+              {winner ? (
+                <div className="flex items-center gap-3 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
+                  <Trophy className="h-5 w-5 text-emerald-400 shrink-0" />
+                  <div>
+                    <p className="text-xs text-slate-400">Winner (your version)</p>
+                    <p className="font-bold text-emerald-400">{winner}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-slate-700/30 border border-slate-600/40 rounded-xl text-center">
+                  <p className="text-slate-500 text-xs">Enter scores above to see winner</p>
+                </div>
+              )}
+
+              <div className="flex gap-3 pb-1">
+                <Button onClick={handleSubmitDisputeScore} disabled={disputeSubmitting || !winner}
+                  className="flex-1 bg-orange-500 hover:bg-orange-600 h-12 text-base font-semibold">
+                  {disputeSubmitting ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <AlertTriangle className="h-5 w-5 mr-2" />}
+                  File Dispute
+                </Button>
+                <Button onClick={() => setDisputeModalOpen(false)} variant="outline" className="h-12 px-5 border-slate-600 text-slate-300">
+                  Cancel
+                </Button>
+              </div>
+              <p className="text-xs text-slate-500 text-center pb-1">
+                The opposing team will be asked to accept your version or it will escalate to admin review.
+              </p>
             </div>
           </div>
         )
