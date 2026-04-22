@@ -54,6 +54,10 @@ export default function ChallengesPage() {
   const searchParams = useSearchParams()
   const { activeTeam } = useTeam()
 
+  // Ticket type from URL — set by the ladder's challenge button for ticket challenges.
+  // null means this is a normal challenge that doesn't require a ticket.
+  const ticketParam = searchParams.get('ticket')
+
   const [loading, setLoading] = useState(true)
   const [challenges, setChallenges] = useState<EnhancedChallenge[]>([])
   const [seasonId, setSeasonId] = useState('')
@@ -72,13 +76,9 @@ export default function ChallengesPage() {
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
   const [venues, setVenues] = useState<Venue[]>([])
-  const [showForfeitWarning, setShowForfeitWarning] = useState(false)
 
-  // Ticket state
+  // Ticket state — no toggle: ticket usage is determined automatically from URL param
   const [teamTickets, setTeamTickets] = useState<TicketT[]>([])
-  const [useTicket, setUseTicket] = useState(false)
-  const [selectedTicketType, setSelectedTicketType] = useState<TicketType | null>(null)
-  const [convertingTickets, setConvertingTickets] = useState(false)
 
   // Slot requirements from settings
   const [slotReqs, setSlotReqs] = useState({
@@ -206,11 +206,6 @@ export default function ChallengesPage() {
 
       // If a ticket type was passed via URL (from the ladder's ticket-based challenge
       // button), pre-select it so the player doesn't have to manually toggle it on.
-      if (ticketParam && ['tier', 'silver', 'gold'].includes(ticketParam)) {
-        setUseTicket(true)
-        setSelectedTicketType(ticketParam as any)
-      }
-
       setShowSendModal(true)
     }
 
@@ -255,9 +250,8 @@ export default function ChallengesPage() {
     return null
   }
 
-  async function doSendChallenge(ticketTypeOverride?: TicketType | null) {
+  async function doSendChallenge() {
     setSendError('')
-    setShowForfeitWarning(false)
     if (!activeTeam) { setSendError('No active team selected. Switch teams in the navbar.'); return }
     if (!opponent) return
     // DateTimeSlotPicker emits "YYYY-MM-DDTHH:MM" only when both date AND time are chosen
@@ -270,7 +264,11 @@ export default function ChallengesPage() {
     const slotValidationError = validateSlots(slot1, slot2, slot3)
     if (slotValidationError) { setSendError(slotValidationError); return }
 
-    const finalTicketType = ticketTypeOverride !== undefined ? ticketTypeOverride : (useTicket ? selectedTicketType : null)
+    // Ticket type is determined by the URL param (set by the ladder's challenge button)
+    // — not by a toggle. If ?ticket=silver|gold|tier was in the URL, use it.
+    const finalTicketType = (ticketParam && ['tier', 'silver', 'gold'].includes(ticketParam))
+      ? ticketParam as TicketType
+      : null
 
     setSending(true)
     try {
@@ -291,14 +289,9 @@ export default function ChallengesPage() {
       if (!res.ok) { setSendError(data.error || 'Failed to send challenge'); return }
 
       const ticketMsg = finalTicketType ? ` using your ${finalTicketType} ticket` : ''
-      if (data.forfeitedTickets?.length > 0) {
-        toast.warning(`Challenge sent. Your ticket(s) were forfeited because this was not a ticket challenge.`)
-      } else {
-        toast.success(`Challenge sent to ${opponent.name}${ticketMsg}!`)
-      }
+      toast.success(`Challenge sent to ${opponent.name}${ticketMsg}!`)
       setShowSendModal(false)
       setSlot1(''); setSlot2(''); setSlot3(''); setSendError('')
-      setUseTicket(false); setSelectedTicketType(null)
       router.replace('/challenges')
       if (activeTeam) fetchChallenges(activeTeam.id)
     } catch (err) {
@@ -309,36 +302,7 @@ export default function ChallengesPage() {
   }
 
   async function handleSendChallenge() {
-    // If team has active tickets and is NOT using one, show a forfeit warning first
-    if (teamTickets.length > 0 && !useTicket) {
-      setShowForfeitWarning(true)
-      return
-    }
     await doSendChallenge()
-  }
-
-  async function handleConvertTickets() {
-    if (!activeTeam || !seasonId) return
-    setConvertingTickets(true)
-    try {
-      const res = await fetch('/api/tickets/convert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teamId: activeTeam.id, seasonId }),
-      })
-      const data = await res.json()
-      if (!res.ok) { toast.error(data.error || 'Conversion failed'); return }
-      toast.success('Silver + Gold tickets converted to a Tier ticket!')
-      // Reload tickets
-      const { data: fresh } = await supabase
-        .from('tickets').select('*')
-        .eq('team_id', activeTeam.id).eq('season_id', seasonId).eq('status', 'active')
-      setTeamTickets(fresh || [])
-    } catch {
-      toast.error('Something went wrong')
-    } finally {
-      setConvertingTickets(false)
-    }
   }
 
   async function handleVerifyMatch(matchResultId: string, myTeamId: string, action: 'verify' | 'dispute') {
@@ -402,7 +366,9 @@ export default function ChallengesPage() {
     if (c.status === 'pending'              && !c.isOutgoing) return true  // incoming: accept/decline
     if (c.status === 'accepted_open'        && !c.isOutgoing) return true  // accepted open: enter time
     if (c.status === 'time_pending_confirm' &&  c.isOutgoing) return true  // opponent proposed time: confirm
-    if (c.status === 'accepted'             &&  c.isOutgoing) return true  // opponent accepted slot: confirm
+    // NOTE: 'accepted' (slot-pick) now goes directly to 'scheduled', so it never needs
+    // action from the challenger. Kept here only for legacy data in the old status.
+    if (c.status === 'accepted'             &&  c.isOutgoing) return true
     return false
   })
 
@@ -712,7 +678,9 @@ export default function ChallengesPage() {
               {isForfeited ? (
                 <span className="text-xs text-slate-400">Forfeited</span>
               ) : isDissolved ? (
-                <span className="text-xs text-slate-400">Dissolved</span>
+                <span className="text-xs text-slate-400">
+                  Dissolved{challenge.dissolved_reason ? ` · ${challenge.dissolved_reason}` : ''}
+                </span>
               ) : isWin !== null ? (
                 <span className={`text-xs font-semibold ${isWin ? 'text-emerald-400' : 'text-red-400'}`}>
                   {isWin ? 'Win' : 'Loss'}
@@ -926,189 +894,43 @@ export default function ChallengesPage() {
             <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-300 text-sm">
               No active team selected. Use the team switcher in the navbar first.
             </div>
-          ) : showForfeitWarning ? (
-            /* ── Forfeit warning confirmation ── */
-            <div className="space-y-4">
-              <div className="p-4 bg-orange-500/10 border border-orange-500/30 rounded-xl space-y-2">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5 text-orange-400 shrink-0" />
-                  <p className="font-semibold text-orange-300">Ticket Forfeit Warning</p>
-                </div>
-                <p className="text-sm text-orange-200/80">
-                  You have {teamTickets.length === 1 ? 'an active' : 'active'}{' '}
-                  <span className="font-semibold text-white">
-                    {teamTickets.map(t => t.ticket_type.charAt(0).toUpperCase() + t.ticket_type.slice(1)).join(' + ')} ticket{teamTickets.length > 1 ? 's' : ''}
-                  </span>.
-                  Sending a normal challenge will permanently forfeit {teamTickets.length > 1 ? 'all of them' : 'it'}.
-                </p>
-                <p className="text-xs text-orange-300/70">Your first outgoing challenge must be a ticket challenge to keep your ticket.</p>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  className="flex-1 border-slate-600 text-slate-300"
-                  onClick={() => setShowForfeitWarning(false)}
-                >
-                  Go back
-                </Button>
-                <Button
-                  className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
-                  disabled={sending}
-                  onClick={() => doSendChallenge(null)}
-                >
-                  {sending ? 'Sending...' : 'Forfeit ticket & send anyway'}
-                </Button>
-              </div>
-            </div>
           ) : (
             <div className="space-y-4">
-              {/* ── Ticket info banner ── */}
-              {useTicket && selectedTicketType && (
-                <div className="flex items-start gap-2 p-3 bg-violet-500/10 border border-violet-500/30 rounded-lg">
-                  <Ticket className="h-4 w-4 text-violet-400 shrink-0 mt-0.5" />
-                  <p className="text-sm text-violet-300">
-                    <span className="font-semibold">
-                      {selectedTicketType.charAt(0).toUpperCase() + selectedTicketType.slice(1)} Ticket challenge
-                    </span>{' '}
-                    — this ticket will be{' '}
-                    <span className="font-medium">consumed if you win</span> or{' '}
-                    <span className="font-medium">forfeited if you lose</span>.
-                    {selectedTicketType === 'silver' && ' Win this match to unlock your Gold ticket.'}
-                  </p>
-                </div>
-              )}
+              {/* ── Contextual ticket banner (no toggle — automatic) ── */}
+              {(() => {
+                const isTicketChallenge = !!(ticketParam && ['tier', 'silver', 'gold'].includes(ticketParam))
+                const ticketLabel = ticketParam
+                  ? ticketParam.charAt(0).toUpperCase() + ticketParam.slice(1)
+                  : null
+                if (isTicketChallenge && ticketLabel) {
+                  return (
+                    <div className="flex items-start gap-2.5 p-3.5 bg-violet-500/10 border border-violet-500/30 rounded-xl">
+                      <Ticket className="h-4 w-4 text-violet-400 shrink-0 mt-0.5" />
+                      <p className="text-sm text-violet-300">
+                        This challenge uses your{' '}
+                        <span className="font-semibold text-white">{ticketLabel} ticket</span>.
+                      </p>
+                    </div>
+                  )
+                }
+                if (!isTicketChallenge && teamTickets.length > 0) {
+                  const ticketNames = teamTickets
+                    .map(t => t.ticket_type.charAt(0).toUpperCase() + t.ticket_type.slice(1))
+                    .join(' + ')
+                  return (
+                    <div className="flex items-start gap-2.5 p-3.5 bg-slate-700/50 border border-slate-600/50 rounded-xl">
+                      <Ticket className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+                      <p className="text-sm text-slate-300">
+                        You have a <span className="font-semibold text-white">{ticketNames} ticket</span> — this challenge won't use it.
+                      </p>
+                    </div>
+                  )
+                }
+                return null
+              })()}
 
               {sendError && (
                 <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-300 text-sm">{sendError}</div>
-              )}
-
-              {/* ── Ticket section (shown when team has active tickets) ── */}
-              {teamTickets.length > 0 && (
-                <div className={`rounded-xl border p-4 space-y-3 ${useTicket ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-800/60 border-slate-700/50'}`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Ticket className={`h-4 w-4 ${useTicket ? 'text-amber-400' : 'text-slate-400'}`} />
-                      <span className={`text-sm font-semibold ${useTicket ? 'text-amber-300' : 'text-slate-300'}`}>
-                        Use a Ticket
-                      </span>
-                    </div>
-                    {/* Toggle */}
-                    <button
-                      onClick={() => { setUseTicket(u => !u); setSelectedTicketType(null) }}
-                      className={`relative w-11 h-6 rounded-full transition-colors ${useTicket ? 'bg-amber-500' : 'bg-slate-600'}`}
-                    >
-                      <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${useTicket ? 'translate-x-6' : 'translate-x-1'}`} />
-                    </button>
-                  </div>
-
-                  {useTicket && (
-                    <div className="space-y-2 pt-1">
-                      <p className="text-xs text-slate-400">Select which ticket to use:</p>
-
-                      {/* Tier ticket */}
-                      {teamTickets.find(t => t.ticket_type === 'tier') && (
-                        <button
-                          onClick={() => setSelectedTicketType('tier')}
-                          className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${selectedTicketType === 'tier' ? 'bg-amber-500/20 border-amber-500/60' : 'bg-slate-700/40 border-slate-600/50 hover:border-slate-500'}`}
-                        >
-                          <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${selectedTicketType === 'tier' ? 'border-amber-500' : 'border-slate-500'}`}>
-                            {selectedTicketType === 'tier' && <div className="w-2 h-2 rounded-full bg-amber-500" />}
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-white">Tier Ticket</p>
-                            <p className="text-xs text-slate-400">Challenge any available team in your own tier</p>
-                          </div>
-                        </button>
-                      )}
-
-                      {/* Silver ticket */}
-                      {teamTickets.find(t => t.ticket_type === 'silver') && (
-                        <button
-                          onClick={() => setSelectedTicketType('silver')}
-                          className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${selectedTicketType === 'silver' ? 'bg-slate-400/20 border-slate-400/60' : 'bg-slate-700/40 border-slate-600/50 hover:border-slate-500'}`}
-                        >
-                          <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${selectedTicketType === 'silver' ? 'border-slate-300' : 'border-slate-500'}`}>
-                            {selectedTicketType === 'silver' && <div className="w-2 h-2 rounded-full bg-slate-300" />}
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-white">Silver Ticket</p>
-                            <p className="text-xs text-slate-400">Challenge any available team in the Silver tier</p>
-                          </div>
-                        </button>
-                      )}
-
-                      {/* Gold ticket — locked if silver is also active */}
-                      {teamTickets.find(t => t.ticket_type === 'gold') && (() => {
-                        const hasActiveSilver = !!teamTickets.find(t => t.ticket_type === 'silver')
-                        return (
-                          <button
-                            onClick={() => !hasActiveSilver && setSelectedTicketType('gold')}
-                            disabled={hasActiveSilver}
-                            className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${
-                              hasActiveSilver
-                                ? 'opacity-50 cursor-not-allowed bg-slate-700/20 border-slate-700/40'
-                                : selectedTicketType === 'gold'
-                                  ? 'bg-yellow-500/20 border-yellow-500/60'
-                                  : 'bg-slate-700/40 border-slate-600/50 hover:border-slate-500'
-                            }`}
-                          >
-                            <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${selectedTicketType === 'gold' ? 'border-yellow-500' : 'border-slate-500'}`}>
-                              {selectedTicketType === 'gold' && <div className="w-2 h-2 rounded-full bg-yellow-500" />}
-                            </div>
-                            <div className="flex-1">
-                              <p className="text-sm font-medium text-white">Gold Ticket</p>
-                              <p className="text-xs text-slate-400">
-                                {hasActiveSilver ? '🔒 Win your Silver ticket match first to unlock' : 'Challenge any available team in the Gold tier'}
-                              </p>
-                            </div>
-                          </button>
-                        )
-                      })()}
-
-                      {/* Convert S+G → Tier */}
-                      {teamTickets.find(t => t.ticket_type === 'silver') && teamTickets.find(t => t.ticket_type === 'gold') && (
-                        <div className="pt-1 border-t border-slate-700/50">
-                          <p className="text-xs text-slate-500 mb-2">Or trade both in:</p>
-                          <button
-                            onClick={handleConvertTickets}
-                            disabled={convertingTickets}
-                            className="w-full flex items-center justify-between p-3 rounded-lg border border-purple-500/40 bg-purple-500/10 text-left hover:bg-purple-500/20 transition-colors"
-                          >
-                            <div>
-                              <p className="text-sm font-medium text-purple-300">Convert Silver + Gold → Tier</p>
-                              <p className="text-xs text-purple-400/70">Forfeit both and receive a Tier ticket instead</p>
-                            </div>
-                            <ChevronRight className="h-4 w-4 text-purple-400 shrink-0" />
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Validation: check opponent is in correct tier */}
-                      {selectedTicketType && opponent?.tierName && (
-                        (() => {
-                          const targetTier = selectedTicketType === 'tier' ? null : selectedTicketType
-                          const opponentTierLower = opponent.tierName?.toLowerCase()
-                          const tierMismatch = targetTier && opponentTierLower !== targetTier
-                          return tierMismatch ? (
-                            <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
-                              {opponent.name} is in the {opponent.tierName} tier — your {selectedTicketType} ticket can only be used to challenge {selectedTicketType} tier teams.
-                            </p>
-                          ) : selectedTicketType ? (
-                            <p className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2">
-                              ✓ Valid — this challenge will use your {selectedTicketType} ticket and bypass the distance limit.
-                            </p>
-                          ) : null
-                        })()
-                      )}
-                    </div>
-                  )}
-
-                  {!useTicket && (
-                    <p className="text-xs text-amber-400/70">
-                      ⚠️ You have a ticket. If you send without using it, the ticket will be forfeited.
-                    </p>
-                  )}
-                </div>
               )}
 
               {/* Opponent info */}
@@ -1171,20 +993,21 @@ export default function ChallengesPage() {
               {/* How scheduling works */}
               <div className="p-3 bg-slate-800/60 border border-slate-600/50 rounded-lg text-xs text-slate-400 space-y-1">
                 <p className="text-slate-300 font-medium text-xs">How it works</p>
-                <p>1. You send this challenge with 3 suggested slots.</p>
-                <p>2. Both teams coordinate on WhatsApp and agree on a time and venue.</p>
-                <p>3. The other team enters the confirmed time and venue in the app.</p>
-                <p>4. You confirm it (or it auto-confirms within 24 h).</p>
+                <p>1. You send this challenge with 3 suggested time slots.</p>
+                <p>2. The other team either picks one of your slots (match immediately confirmed) or accepts and arranges a different time over WhatsApp.</p>
+                <p>3. If they use WhatsApp, either team enters the agreed time in the app and you confirm it.</p>
               </div>
 
               <Button
                 onClick={handleSendChallenge}
-                disabled={sending || (useTicket && !selectedTicketType)}
+                disabled={sending}
                 className="w-full bg-emerald-500 hover:bg-emerald-600"
               >
-                {sending ? 'Sending...' : useTicket && selectedTicketType
-                  ? `Send Ticket Challenge (${selectedTicketType.charAt(0).toUpperCase() + selectedTicketType.slice(1)})`
-                  : 'Send Challenge'
+                {sending
+                  ? 'Sending...'
+                  : (ticketParam && ['tier', 'silver', 'gold'].includes(ticketParam))
+                    ? `Send ${ticketParam.charAt(0).toUpperCase() + ticketParam.slice(1)} Ticket Challenge`
+                    : 'Send Challenge'
                 }
               </Button>
             </div>

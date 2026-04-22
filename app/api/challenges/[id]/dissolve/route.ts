@@ -16,6 +16,9 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const body = await request.json().catch(() => ({}))
+    const reason: string | null = body.reason ?? null
+
     const adminClient = createAdminClient()
 
     // Get challenge
@@ -46,6 +49,7 @@ export async function POST(
       .from('challenges')
       .update({
         status: 'dissolved',
+        dissolved_reason: reason ?? 'Dissolved by admin.',
         updated_at: now.toISOString(),
       })
       .eq('id', params.id)

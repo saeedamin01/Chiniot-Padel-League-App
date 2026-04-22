@@ -66,6 +66,7 @@ export async function PATCH(
       'slot_3',
       'accepted_slot',
       'forfeit_by',
+      'dissolved_reason',
     ] as const
 
     // Validate status if provided

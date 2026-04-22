@@ -1,11 +1,14 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
- * If a challenge is in 'accepted' status and the confirmation_deadline has passed,
- * automatically move it to 'scheduled'.
+ * If a challenge is in 'accepted' or 'time_pending_confirm' status and the
+ * confirmation_deadline has passed, automatically move it to 'scheduled'.
  *
  * Call this whenever a challenge is read server-side so no cron job is needed.
  * Safe to call multiple times — it's a no-op if not applicable.
+ *
+ * Note: 'accepted' is a legacy status (slot-pick now goes directly to 'scheduled').
+ * 'time_pending_confirm' is the current status that needs auto-confirm.
  */
 export async function checkAndAutoConfirm(challengeId: string): Promise<boolean> {
   const supabase = createAdminClient()
@@ -17,7 +20,7 @@ export async function checkAndAutoConfirm(challengeId: string): Promise<boolean>
     .single()
 
   if (!challenge) return false
-  if (challenge.status !== 'accepted') return false
+  if (!['accepted', 'time_pending_confirm'].includes(challenge.status)) return false
   if (!challenge.confirmation_deadline) return false
 
   const now = new Date()
@@ -33,7 +36,7 @@ export async function checkAndAutoConfirm(challengeId: string): Promise<boolean>
       match_date: challenge.confirmed_time, // keep match_date in sync
     })
     .eq('id', challengeId)
-    .eq('status', 'accepted') // guard against race conditions
+    .in('status', ['accepted', 'time_pending_confirm']) // guard against race conditions
 
   if (error) {
     console.error('Auto-confirm failed:', error)

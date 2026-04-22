@@ -210,8 +210,12 @@ export default function ChallengeDetailPage() {
         return
       }
 
-      // Trigger auto-confirm server-side if confirmation window has expired
-      if (challengeData?.status === 'accepted' && challengeData?.confirmation_deadline) {
+      // Trigger auto-confirm server-side if the confirmation window has expired.
+      // Covers both 'accepted' (legacy slot-pick) and 'time_pending_confirm' (open-accept flow).
+      if (
+        ['accepted', 'time_pending_confirm'].includes(challengeData?.status ?? '') &&
+        challengeData?.confirmation_deadline
+      ) {
         const deadline = new Date(challengeData.confirmation_deadline)
         if (deadline <= new Date()) {
           // Fire-and-forget — page will re-fetch with updated status
@@ -310,7 +314,7 @@ export default function ChallengeDetailPage() {
       toast.success(
         acceptOption === 'open'
           ? 'Challenge accepted! Agree on a time over WhatsApp, then enter it here.'
-          : 'Slot selected! The challenger has been notified to confirm.'
+          : 'Slot selected — match is now confirmed and scheduled!'
       )
       await fetchChallenge()
     } catch {
@@ -624,7 +628,7 @@ export default function ChallengeDetailPage() {
 
   const statusLabel: Record<string, string> = {
     pending: 'Awaiting response',
-    accepted: isChallengingTeam ? 'Please confirm the slot' : 'Waiting for challenger to confirm',
+    accepted: isChallengingTeam ? 'Confirm the time' : 'Waiting for challenger to confirm',
     accepted_open: 'Enter agreed match time',
     time_pending_confirm: isChallengingTeam ? 'Please confirm the agreed time' : 'Waiting for challenger to confirm',
     reschedule_requested: challenge?.reschedule_requested_by && userTeamIds.includes(challenge.reschedule_requested_by)
@@ -1489,16 +1493,34 @@ export default function ChallengeDetailPage() {
 
       {/* ── FORFEITED / DISSOLVED ── */}
       {['forfeited', 'dissolved'].includes(challenge.status) && (
-        <Card className="bg-red-500/10 border-red-500/30 p-6">
+        <Card className={`p-6 ${
+          challenge.status === 'dissolved'
+            ? 'bg-slate-800/50 border-slate-600/50'
+            : 'bg-red-500/10 border-red-500/30'
+        }`}>
           <div className="flex items-start gap-3">
-            <XCircle className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-red-300 capitalize">{challenge.status}</p>
-              <p className="text-red-300/70 text-sm mt-1">
-                {challenge.status === 'forfeited'
-                  ? 'This challenge ended in a forfeit.'
-                  : 'This challenge was dissolved.'}
+            <XCircle className={`h-5 w-5 flex-shrink-0 mt-0.5 ${
+              challenge.status === 'dissolved' ? 'text-slate-400' : 'text-red-400'
+            }`} />
+            <div className="space-y-1">
+              <p className={`font-semibold capitalize ${
+                challenge.status === 'dissolved' ? 'text-slate-300' : 'text-red-300'
+              }`}>
+                {challenge.status === 'forfeited' ? 'Challenge Forfeited' : 'Challenge Dissolved'}
               </p>
+              {challenge.status === 'dissolved' && (challenge as any).dissolved_reason ? (
+                <p className="text-slate-400 text-sm">
+                  {(challenge as any).dissolved_reason}
+                </p>
+              ) : (
+                <p className={`text-sm mt-1 ${
+                  challenge.status === 'dissolved' ? 'text-slate-500' : 'text-red-300/70'
+                }`}>
+                  {challenge.status === 'forfeited'
+                    ? 'This challenge ended in a forfeit.'
+                    : 'This challenge was dissolved.'}
+                </p>
+              )}
             </div>
           </div>
         </Card>

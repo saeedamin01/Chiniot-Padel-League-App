@@ -163,9 +163,14 @@ export async function GET(request: NextRequest) {
 
       // ── 2. Dissolve any other simultaneous expired challenges against the same team ──
       for (const other of rest) {
+        const { data: siblingChallengedTeam } = await adminClient
+          .from('teams').select('name').eq('id', other.challenged_team_id).single()
         await adminClient
           .from('challenges')
-          .update({ status: 'dissolved' })
+          .update({
+            status: 'dissolved',
+            dissolved_reason: `${siblingChallengedTeam?.name ?? 'The challenged team'} was already forfeited on an earlier simultaneous challenge.`,
+          })
           .eq('id', other.id)
 
         // Notify the other challenging teams their challenge was dissolved

@@ -107,13 +107,17 @@ export async function POST(
         return NextResponse.json({ error: 'That slot is not set on this challenge' }, { status: 400 })
       }
 
-      newStatus = 'accepted'
+      // Slot chosen by challenged team → immediately scheduled.
+      // The challenger already proposed this time, so no re-confirmation is needed.
+      newStatus = 'scheduled'
       updatePayload = {
-        status: 'accepted',
+        status: 'scheduled',
         accepted_at: now.toISOString(),
         accepted_slot: slotValue,
         confirmed_time: slotValue, // keep confirmed_time in sync for downstream queries
-        confirmation_deadline: addHours(now, confirmationWindowHours).toISOString(),
+        match_date: slotValue,     // keep match_date in sync for existing queries
+        scheduled_at: now.toISOString(),
+        // No confirmation_deadline — match is already confirmed
       }
     }
 
@@ -140,7 +144,10 @@ export async function POST(
     if (otherChallenges && otherChallenges.length > 0) {
       await adminClient
         .from('challenges')
-        .update({ status: 'dissolved' })
+        .update({
+          status: 'dissolved',
+          dissolved_reason: `${challengedTeam.name} accepted another challenge.`,
+        })
         .in('id', otherChallenges.map(c => c.id))
 
       for (const other of otherChallenges) {
@@ -209,7 +216,7 @@ export async function POST(
           },
         ])
       } else {
-        // Option 2: slot chosen — challenger needs to confirm
+        // Option 2: slot chosen → match is now scheduled (no re-confirmation needed)
         const slotDate = new Date(challenge[(['slot_1', 'slot_2', 'slot_3'] as const)[slotIndex]])
         const formattedTime = slotDate.toLocaleString('en-GB', {
           weekday: 'short', day: 'numeric', month: 'short',
@@ -219,9 +226,9 @@ export async function POST(
           {
             player_id: challengingTeamData.player1_id,
             team_id: challenge.challenging_team_id,
-            type: 'challenge_awaiting_confirm',
-            title: 'Match Time Set — Please Confirm',
-            message: `${challengedTeam.name} accepted your challenge and selected your slot: ${formattedTime}. Please confirm within ${confirmationWindowHours}h.`,
+            type: 'challenge_scheduled',
+            title: 'Match Scheduled',
+            message: `${challengedTeam.name} accepted your challenge and picked your slot: ${formattedTime}. Your match is now confirmed!`,
             action_url: `/challenges/${params.id}`,
             is_read: false,
             email_sent: false,
@@ -229,9 +236,9 @@ export async function POST(
           {
             player_id: challengingTeamData.player2_id,
             team_id: challenge.challenging_team_id,
-            type: 'challenge_awaiting_confirm',
-            title: 'Match Time Set — Please Confirm',
-            message: `${challengedTeam.name} accepted your challenge and selected your slot: ${formattedTime}. Please confirm within ${confirmationWindowHours}h.`,
+            type: 'challenge_scheduled',
+            title: 'Match Scheduled',
+            message: `${challengedTeam.name} accepted your challenge and picked your slot: ${formattedTime}. Your match is now confirmed!`,
             action_url: `/challenges/${params.id}`,
             is_read: false,
             email_sent: false,
@@ -247,7 +254,7 @@ export async function POST(
       action_type: 'challenge_accepted',
       entity_type: 'challenge',
       entity_id: params.id,
-      new_value: { status: newStatus, acceptMode, slotIndex: acceptMode === 'slot' ? slotIndex : null },
+      new_value: { status: newStatus, acceptMode, slotIndex: acceptMode === 'slot' ? slotIndex : null, direct_schedule: acceptMode === 'slot' },
       created_at: now.toISOString(),
     })
 
@@ -255,7 +262,7 @@ export async function POST(
     const slotFields2 = ['slot_1', 'slot_2', 'slot_3'] as const
     await logChallengeEvent({
       challengeId: params.id,
-      eventType: 'challenge_accepted',
+      eventType: acceptMode === 'slot' ? 'time_confirmed' : 'challenge_accepted',
       actorId: user.id,
       actorRole: 'player',
       actorName: challengedTeam.name,
@@ -265,6 +272,7 @@ export async function POST(
             mode: 'slot',
             slot_index: slotIndex,
             confirmed_time: challenge[slotFields2[slotIndex as number]],
+            direct_schedule: true,
           },
     })
 

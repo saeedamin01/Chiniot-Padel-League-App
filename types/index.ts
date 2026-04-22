@@ -183,6 +183,7 @@ export interface Challenge {
   ticket_id?: string
   accepted_at?: string
   scheduled_at?: string
+  dissolved_reason?: string | null
   created_at: string
   updated_at: string
   // Joined
