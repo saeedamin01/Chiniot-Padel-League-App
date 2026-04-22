@@ -17,7 +17,7 @@ export interface ActiveTeam {
 }
 
 interface TeamContextValue {
-  teams: ActiveTeam[]          // all teams this player is on
+  teams: ActiveTeam[]
   activeTeam: ActiveTeam | null
   switchTeam: (teamId: string) => void
   loading: boolean
@@ -48,10 +48,13 @@ export function TeamProvider({
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const STORAGE_KEY = `cpl_active_team_${userId}`
+  // Include seasonId in the key so saved selections from a different season
+  // are never accidentally restored in the current one.
+  const STORAGE_KEY = `cpl_active_team_${userId}_${seasonId}`
 
   const loadTeams = useCallback(async () => {
     setLoading(true)
+
     const { data, error } = await supabase
       .from('teams')
       .select(`
@@ -67,22 +70,38 @@ export function TeamProvider({
       .in('status', ['active', 'frozen'])
       .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
 
-    if (error || !data) {
+    if (error) {
+      console.error('[TeamContext] loadTeams error:', error.message)
+      setLoading(false)
+      return
+    }
+
+    if (!data || data.length === 0) {
+      console.warn('[TeamContext] No teams found for userId=%s seasonId=%s', userId, seasonId)
+      setTeams([])
       setLoading(false)
       return
     }
 
     const mapped: ActiveTeam[] = data.map((t: any) => {
-      const pos = Array.isArray(t.ladder_position) ? t.ladder_position[0] : t.ladder_position
+      // ladder_position can come back as an array (1-to-many) or object (1-to-1)
+      const pos = Array.isArray(t.ladder_position)
+        ? t.ladder_position[0] ?? null
+        : t.ladder_position ?? null
+      // tier is similarly nested
+      const tier = pos
+        ? (Array.isArray(pos.tier) ? pos.tier[0] : pos.tier) ?? null
+        : null
+
       return {
-        id: t.id,
-        name: t.name,
-        status: t.status,
-        rank: pos?.rank ?? null,
-        tierName: pos?.tier?.name ?? null,
-        tierColor: pos?.tier?.color ?? null,
-        player1Id: t.player1?.id ?? '',
-        player2Id: t.player2?.id ?? '',
+        id:          t.id,
+        name:        t.name,
+        status:      t.status,
+        rank:        pos?.rank   ?? null,
+        tierName:    tier?.name  ?? null,
+        tierColor:   tier?.color ?? null,
+        player1Id:   t.player1?.id   ?? '',
+        player2Id:   t.player2?.id   ?? '',
         player1Name: t.player1?.name ?? '',
         player2Name: t.player2?.name ?? '',
       }
@@ -90,12 +109,12 @@ export function TeamProvider({
 
     setTeams(mapped)
 
-    // Restore saved selection, fall back to first team
+    // Restore saved selection; fall back to first team if saved ID is stale
     const saved = localStorage.getItem(STORAGE_KEY)
     const valid = mapped.find(t => t.id === saved)
     if (valid) {
       setActiveTeamId(valid.id)
-    } else if (mapped.length > 0) {
+    } else {
       setActiveTeamId(mapped[0].id)
       localStorage.setItem(STORAGE_KEY, mapped[0].id)
     }
