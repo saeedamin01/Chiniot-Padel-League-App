@@ -7,6 +7,7 @@ import { BottomNav } from '@/components/layout/BottomNav'
 import { PushNotificationManager } from '@/components/PushNotificationManager'
 import { createClient } from '@/lib/supabase/client'
 import { TeamProvider } from '@/context/TeamContext'
+import { ChatProvider } from '@/context/ChatContext'
 import { toast } from 'sonner'
 
 interface NavbarUser {
@@ -114,12 +115,23 @@ export default function PlayerLayout({ children }: { children: React.ReactNode }
     </div>
   )
 
-  // Wrap with TeamProvider only when we have both user and season
+  // Wrap with TeamProvider + ChatProvider only when we have both user and season
   if (user && seasonId) {
     return (
       <TeamProvider userId={user.id} seasonId={seasonId}>
-        {content}
+        <ChatProvider userId={user.id}>
+          {content}
+        </ChatProvider>
       </TeamProvider>
+    )
+  }
+
+  // Wrap with just ChatProvider if we have a user but no season yet
+  if (user) {
+    return (
+      <ChatProvider userId={user.id}>
+        {content}
+      </ChatProvider>
     )
   }
 

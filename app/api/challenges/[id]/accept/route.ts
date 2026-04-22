@@ -275,6 +275,24 @@ export async function POST(
       }).catch(() => {})
     }
 
+    // ── Auto-create chat room for this challenge ──────────────────────────────
+    // Collect all 4 player IDs from both teams
+    if (challengingTeamData) {
+      const allPlayerIds = [
+        challengedTeam.player1_id,
+        challengedTeam.player2_id,
+        challengingTeamData.player1_id,
+        challengingTeamData.player2_id,
+      ].filter(Boolean) as string[]
+
+      await adminClient
+        .from('challenge_chats')
+        .upsert(
+          { challenge_id: params.id, allowed_player_ids: allPlayerIds },
+          { onConflict: 'challenge_id', ignoreDuplicates: true }
+        )
+    }
+
     // Audit log
     await adminClient.from('audit_log').insert({
       actor_id: user.id,

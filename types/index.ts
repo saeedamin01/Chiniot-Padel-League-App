@@ -322,3 +322,35 @@ export interface TeamStats {
   current_rank?: number
   tier?: Tier
 }
+
+// ─── Chat ─────────────────────────────────────────────────────────────────────
+
+export interface ChallengeChat {
+  id: string
+  challenge_id: string
+  allowed_player_ids: string[]
+  last_email_sent_at: string | null
+  created_at: string
+  // Joined fields
+  challenge?: {
+    id: string
+    challenge_code: string
+    challenging_team?: { id: string; name: string }
+    challenged_team?: { id: string; name: string }
+  }
+}
+
+export interface ChatMessage {
+  id: string
+  chat_id: string
+  sender_id: string
+  content: string
+  read_by: string[]
+  created_at: string
+  // Joined sender info
+  sender?: {
+    id: string
+    name: string
+    avatar_url?: string | null
+  }
+}

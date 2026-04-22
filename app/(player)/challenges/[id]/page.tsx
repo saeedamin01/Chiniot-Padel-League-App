@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import {
@@ -162,6 +163,9 @@ export default function ChallengeDetailPage() {
   const [disputeSubmitting, setDisputeSubmitting] = useState(false)
   const [acceptDisputeLoading, setAcceptDisputeLoading] = useState(false)
 
+  // Chat
+  const [chatId, setChatId] = useState<string | null>(null)
+
   const supabase = createClient()
 
   const fetchChallenge = useCallback(async () => {
@@ -261,6 +265,17 @@ export default function ChallengeDetailPage() {
       }
 
       setChallenge(normalized)
+
+      // Look up the chat room for this challenge (exists once it's accepted)
+      const ACCEPTED_STATUSES = ['accepted_open', 'accepted', 'time_pending_confirm', 'revision_proposed', 'reschedule_requested', 'reschedule_pending_admin', 'scheduled', 'played', 'forfeited']
+      if (ACCEPTED_STATUSES.includes(normalized.status)) {
+        const { data: chatRow } = await supabase
+          .from('challenge_chats')
+          .select('id')
+          .eq('challenge_id', challengeId)
+          .single()
+        if (chatRow) setChatId(chatRow.id)
+      }
 
       // Load active venues for accept form (pending) and for add-location / reschedule forms
       if (!['played', 'forfeited', 'dissolved'].includes(normalized.status)) {
@@ -821,6 +836,28 @@ export default function ChallengeDetailPage() {
           </Card>
         )
       })()}
+
+      {/* In-App Chat — show once the chat room exists */}
+      {chatId && (isChallengingTeam || isChallengedTeam) && (
+        <Card className="bg-slate-800/60 border-slate-700/50 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="h-4 w-4 text-emerald-400" />
+              <div>
+                <h3 className="text-sm font-semibold text-white">Match Chat</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Coordinate with your opponents in-app</p>
+              </div>
+            </div>
+            <Link
+              href={`/chat/${chatId}`}
+              className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 transition-colors text-sm font-medium"
+            >
+              <MessageCircle className="h-4 w-4" />
+              Open Chat
+            </Link>
+          </div>
+        </Card>
+      )}
 
       {/* Status + Countdown Row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">

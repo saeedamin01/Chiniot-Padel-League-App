@@ -3,8 +3,9 @@
 import React, { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Trophy, Swords, Globe, Check, Users } from 'lucide-react'
+import { LayoutDashboard, Trophy, Swords, Globe, Check, Users, MessageCircle } from 'lucide-react'
 import { useTeam } from '@/context/TeamContext'
+import { useChat } from '@/context/ChatContext'
 
 // ── Tier colour map ──────────────────────────────────────────────────────────
 // Each entry has three slots:
@@ -53,16 +54,18 @@ const DEFAULT_COLORS = {
 export function BottomNav() {
   const pathname = usePathname()
   const { teams, activeTeam, switchTeam } = useTeam()
+  const { totalUnread } = useChat()
   const [sheetOpen, setSheetOpen] = useState(false)
 
   const tierColors = TIER_COLORS[activeTeam?.tierName ?? ''] ?? DEFAULT_COLORS
   const canSwitch  = teams.length >= 2
 
   const tabs = [
-    { href: '/dashboard',  label: 'Home',       icon: LayoutDashboard },
-    { href: '/ladder',     label: 'Ladder',     icon: Trophy          },
-    { href: '/challenges', label: 'Challenges', icon: Swords          },
-    { href: '/league',     label: 'League',     icon: Globe           },
+    { href: '/dashboard',  label: 'Home',       icon: LayoutDashboard, badge: 0 },
+    { href: '/ladder',     label: 'Ladder',     icon: Trophy,          badge: 0 },
+    { href: '/challenges', label: 'Challenges', icon: Swords,          badge: 0 },
+    { href: '/chat',       label: 'Chat',       icon: MessageCircle,   badge: totalUnread },
+    { href: '/league',     label: 'League',     icon: Globe,           badge: 0 },
   ]
 
   return (
@@ -178,7 +181,7 @@ export function BottomNav() {
         <div className="flex items-stretch justify-around h-16">
 
           {/* Regular nav tabs */}
-          {tabs.map(({ href, label, icon: Icon }) => {
+          {tabs.map(({ href, label, icon: Icon, badge }) => {
             const active = pathname === href
               || (href !== '/dashboard' && pathname.startsWith(href))
 
@@ -197,10 +200,22 @@ export function BottomNav() {
                 {active && (
                   <span className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-emerald-500" />
                 )}
-                <Icon
-                  className="h-5 w-5"
-                  strokeWidth={active ? 2.5 : 1.8}
-                />
+                {/* Icon + optional unread badge */}
+                <div className="relative">
+                  <Icon
+                    className="h-5 w-5"
+                    strokeWidth={active ? 2.5 : 1.8}
+                  />
+                  {badge > 0 && (
+                    <span className={[
+                      'absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] px-0.5',
+                      'rounded-full bg-emerald-500 text-slate-950 text-[9px] font-bold',
+                      'flex items-center justify-center border border-white dark:border-slate-950',
+                    ].join(' ')}>
+                      {badge > 9 ? '9+' : badge}
+                    </span>
+                  )}
+                </div>
                 <span className="text-[10px] font-medium tracking-wide">
                   {label}
                 </span>

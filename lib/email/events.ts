@@ -25,6 +25,7 @@ import {
   challengeDissolvedEmail,
   scoreDisputedEmail,
   disputeResolvedEmail,
+  chatMessageEmail,
 } from '@/lib/email/mailer'
 
 // ─── Event type ───────────────────────────────────────────────────────────────
@@ -37,6 +38,7 @@ export type EmailEvent =
   | 'challenge_dissolved'
   | 'score_disputed'
   | 'dispute_resolved'
+  | 'chat_message'
 
 // ─── Payload types (caller-supplied, excluding BaseData) ──────────────────────
 
@@ -109,6 +111,15 @@ export interface DisputeResolvedPayload {
   challengeUrl: string
 }
 
+export interface ChatMessagePayload {
+  senderName: string
+  messagePreview: string
+  challengeCode: string
+  teamA: string
+  teamB: string
+  chatUrl: string
+}
+
 // ─── Payload union ────────────────────────────────────────────────────────────
 
 type EventPayloadMap = {
@@ -119,6 +130,7 @@ type EventPayloadMap = {
   challenge_dissolved: ChallengeDissolvedPayload
   score_disputed: ScoreDisputedPayload
   dispute_resolved: DisputeResolvedPayload
+  chat_message: ChatMessagePayload
 }
 
 // ─── Core function ────────────────────────────────────────────────────────────
@@ -247,6 +259,17 @@ export async function sendEventEmail<E extends EmailEvent>(
             ...base,
             ...p,
             previewText: `The score dispute for ${p.challengeCode} has been resolved. Ladder updated.`,
+          })
+          break
+        }
+
+        case 'chat_message': {
+          const p = payload as ChatMessagePayload
+          subject = `💬 New message from ${p.senderName} — ${p.challengeCode}`
+          html = chatMessageEmail({
+            ...base,
+            ...p,
+            previewText: `${p.senderName}: ${p.messagePreview.slice(0, 80)}`,
           })
           break
         }

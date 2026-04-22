@@ -20,6 +20,7 @@ export type PushEvent =
   | 'challenge_dissolved'
   | 'score_disputed'
   | 'dispute_resolved'
+  | 'chat_message'
 
 // ─── Per-event payload types ──────────────────────────────────────────────────
 
@@ -70,6 +71,13 @@ export interface PushDisputeResolvedPayload {
   challengeId: string
 }
 
+export interface PushChatMessagePayload {
+  senderName: string
+  messagePreview: string
+  challengeCode: string
+  chatId: string
+}
+
 type PushEventPayloadMap = {
   challenge_received:   PushChallengeReceivedPayload
   challenge_accepted:   PushChallengeAcceptedPayload
@@ -78,6 +86,7 @@ type PushEventPayloadMap = {
   challenge_dissolved:  PushChallengeDissolvedPayload
   score_disputed:       PushScoreDisputedPayload
   dispute_resolved:     PushDisputeResolvedPayload
+  chat_message:         PushChatMessagePayload
 }
 
 // ─── Core function ────────────────────────────────────────────────────────────
@@ -216,6 +225,18 @@ export async function sendPushEvent<E extends PushEvent>(
             tag:   `dispute-resolved-${d.challengeId}`,
             icon:  '/icons/icon-192.svg',
           }
+      break
+    }
+
+    case 'chat_message': {
+      const d = data as PushChatMessagePayload
+      payload = {
+        title: `💬 ${d.senderName}`,
+        body:  `${d.challengeCode}: ${d.messagePreview.slice(0, 100)}`,
+        url:   `${appUrl()}/chat/${d.chatId}`,
+        tag:   `chat-${d.chatId}`,
+        icon:  '/icons/icon-192.svg',
+      }
       break
     }
 

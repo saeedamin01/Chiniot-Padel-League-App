@@ -495,6 +495,36 @@ export function disputeResolvedEmail(data: DisputeResolvedData): string {
   return baseLayout(content, data)
 }
 
+// ─── Template: chat_message ───────────────────────────────────────────────────
+
+export interface ChatMessageEmailData extends BaseData {
+  senderName: string
+  messagePreview: string
+  challengeCode: string
+  teamA: string
+  teamB: string
+  chatUrl: string
+}
+
+export function chatMessageEmail(data: ChatMessageEmailData): string {
+  const content =
+    heroSection('💬', 'New message in your match chat', `${escHtml(data.teamA)} vs ${escHtml(data.teamB)}`) +
+    bodySection(`
+      ${p(`Hi <strong>${escHtml(data.playerName)}</strong>, <strong>${escHtml(data.senderName)}</strong> sent a message in the chat for challenge <strong>${escHtml(data.challengeCode)}</strong>:`)}
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;">
+        <tr>
+          <td style="background-color:${C.mutedBg};border:1px solid ${C.border};border-left:3px solid ${C.emeraldText};border-radius:0 8px 8px 0;padding:12px 16px;">
+            <p style="margin:0;font-size:13px;color:${C.body};line-height:1.5;">${escHtml(data.messagePreview)}</p>
+          </td>
+        </tr>
+      </table>
+      ${ctaButton('Open Chat', data.chatUrl)}
+      ${p('You can reply directly in the app.', `font-size:12px;color:${C.muted};`)}
+    `)
+
+  return baseLayout(content, data)
+}
+
 // ─── Template: account_created (existing — kept for compat) ──────────────────
 
 export function accountCreatedEmail(data: {
