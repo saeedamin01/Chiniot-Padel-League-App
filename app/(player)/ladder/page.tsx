@@ -1,16 +1,15 @@
 'use client'
 
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import {
-  Search, Trophy, Zap, Users, Snowflake,
-  Calendar, Clock, CheckCircle, AlertCircle, ChevronRight,
-  TrendingUp, TrendingDown, Flame, Ticket as TicketIcon,
+  Search, Zap, Users, Snowflake, Calendar, Clock, CheckCircle,
+  AlertCircle, ChevronDown, Flame, Ticket as TicketIcon, X,
+  TrendingUp, TrendingDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import type { Tier } from '@/types'
 import { useTeam } from '@/context/TeamContext'
 
@@ -35,11 +34,8 @@ interface TeamStats {
   wins: number
   losses: number
   played: number
-  // last N results, index 0 = most recent
   recentForm: ('W' | 'L')[]
-  // net rank positions gained this season (wins as challenger - losses as challenged)
   rankGained: number
-  // current consecutive win streak
   winStreak: number
 }
 
@@ -56,8 +52,8 @@ interface PositionRow {
   team_id: string | null
   isMyTeam: boolean
   canChallenge: boolean
-  requiresTicket: boolean      // true when only a ticket makes this challenge possible
-  ticketType: string | null    // which ticket type enables it
+  requiresTicket: boolean
+  ticketType: string | null
   challenges: TeamChallengeInfo[]
   stats: TeamStats | null
   tickets: ActiveTicket[]
@@ -68,156 +64,117 @@ interface TierSection {
   positions: PositionRow[]
 }
 
-// ─── Challenge pill ───────────────────────────────────────────────────────────
-// Direction is ALWAYS shown — even for scheduled/accepted states.
-// Sent   = this team challenged UP (they are lower on the ladder)
-// Received = this team is being challenged FROM BELOW (they hold the higher rank)
+// ─── Tier style map ───────────────────────────────────────────────────────────
 
-function ChallengePill({ info }: { info: TeamChallengeInfo }) {
-  if (info.status === 'result_pending') {
-    return (
-      <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-green-500/15 text-green-600 border border-green-500/25 whitespace-nowrap">
-        <CheckCircle className="h-3 w-3" />
-        Result Pending
-      </span>
-    )
-  }
-
-  if (info.type === 'sent') {
-    const label =
-      info.status === 'scheduled' ? '↑ Match Scheduled' :
-      info.status === 'accepted'  ? '↑ Awaiting Confirm' :
-      'Challenging Up ↑'
-    const icon =
-      info.status === 'scheduled' ? <Calendar className="h-3 w-3" /> :
-      info.status === 'accepted'  ? <Clock className="h-3 w-3" /> :
-      <Zap className="h-3 w-3" />
-    const colors =
-      info.status === 'scheduled' ? 'bg-blue-500/15 text-blue-600 border-blue-500/25' :
-      info.status === 'accepted'  ? 'bg-orange-500/15 text-orange-600 border-orange-500/25' :
-      'bg-yellow-400/15 text-yellow-700 border-yellow-400/30 dark:text-yellow-400'
-    return (
-      <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${colors}`}>
-        {icon}{label}
-      </span>
-    )
-  }
-
-  // received = higher-ranked team being challenged FROM BELOW
-  const label =
-    info.status === 'scheduled' ? '↓ Match Scheduled' :
-    info.status === 'accepted'  ? '↓ Time Confirmed' :
-    'Challenged from Below ↓'
-  const icon =
-    info.status === 'scheduled' ? <Calendar className="h-3 w-3" /> :
-    info.status === 'accepted'  ? <Clock className="h-3 w-3" /> :
-    <AlertCircle className="h-3 w-3" />
-  const colors =
-    info.status === 'scheduled' ? 'bg-purple-500/15 text-purple-600 border-purple-500/25' :
-    info.status === 'accepted'  ? 'bg-orange-500/15 text-orange-600 border-orange-500/25' :
-    'bg-purple-500/15 text-purple-600 border-purple-500/25 dark:text-purple-400'
-  return (
-    <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${colors}`}>
-      {icon}{label}
-    </span>
-  )
+const TIER_STYLE: Record<string, {
+  border: string
+  dot: string
+  rank: string
+  headerBg: string
+}> = {
+  Diamond:  {
+    border:   'border-cyan-200   dark:border-cyan-500/20',
+    dot:      'bg-cyan-500',
+    rank:     'text-cyan-700   dark:text-cyan-400',
+    headerBg: 'bg-cyan-50/80   dark:bg-cyan-500/5',
+  },
+  Platinum: {
+    border:   'border-violet-200 dark:border-violet-500/20',
+    dot:      'bg-violet-500',
+    rank:     'text-violet-700 dark:text-violet-400',
+    headerBg: 'bg-violet-50/80 dark:bg-violet-500/5',
+  },
+  Gold: {
+    border:   'border-amber-200  dark:border-amber-500/20',
+    dot:      'bg-amber-500',
+    rank:     'text-amber-700  dark:text-amber-500',
+    headerBg: 'bg-amber-50/80  dark:bg-amber-500/5',
+  },
+  Silver: {
+    border:   'border-slate-300  dark:border-slate-500/20',
+    dot:      'bg-slate-400',
+    rank:     'text-slate-600  dark:text-slate-400',
+    headerBg: 'bg-slate-100/80 dark:bg-slate-500/5',
+  },
+  Bronze: {
+    border:   'border-orange-200 dark:border-orange-500/20',
+    dot:      'bg-orange-500',
+    rank:     'text-orange-700 dark:text-orange-400',
+    headerBg: 'bg-orange-50/80 dark:bg-orange-500/5',
+  },
+}
+const DEFAULT_TIER_STYLE = {
+  border:   'border-slate-200 dark:border-slate-700/40',
+  dot:      'bg-emerald-500',
+  rank:     'text-emerald-700 dark:text-emerald-400',
+  headerBg: 'bg-slate-50     dark:bg-slate-800/40',
 }
 
-// ─── Opponent context line ────────────────────────────────────────────────────
-// Shows: "vs Echo Warriors · #2 above" or "vs Delta Force · #5 below"
-// This is the second line shown under the badge — always rendered when there's
-// an active challenge with a known opponent.
+// ─── Challenge status helpers ─────────────────────────────────────────────────
 
-function ChallengeOpponentLine({ info }: { info: TeamChallengeInfo }) {
-  if (info.status === 'result_pending' || !info.opponentName) return null
-
-  const rankLabel = info.opponentRank != null ? `#${info.opponentRank}` : null
-  const dirLabel  = info.type === 'sent' ? 'above' : 'below'
-  const dirColor  = info.type === 'sent' ? 'text-yellow-600 dark:text-yellow-500' : 'text-purple-600 dark:text-purple-400'
-
-  return (
-    <p className="text-xs text-slate-500 leading-snug">
-      vs{' '}
-      <span className="font-semibold text-slate-400">{info.opponentName}</span>
-      {rankLabel && (
-        <>
-          {' '}
-          <span className={`font-semibold ${dirColor}`}>
-            {rankLabel} {dirLabel}
-          </span>
-        </>
-      )}
-    </p>
-  )
+function challengeStatusLabel(ci: TeamChallengeInfo): string {
+  if (ci.status === 'result_pending') return 'Result pending'
+  if (ci.type === 'sent') {
+    if (ci.status === 'scheduled') return 'Match scheduled ↑'
+    if (ci.status === 'accepted')  return 'Time confirmed ↑'
+    return 'Challenge sent ↑'
+  }
+  if (ci.status === 'scheduled') return 'Match scheduled ↓'
+  if (ci.status === 'accepted')  return 'Time confirmed ↓'
+  return 'Challenged from below ↓'
 }
 
-// ─── Stats strip ──────────────────────────────────────────────────────────────
+function challengeStatusColors(ci: TeamChallengeInfo): string {
+  if (ci.status === 'result_pending')
+    return 'bg-green-100 text-green-700 border-green-200 dark:bg-green-500/15 dark:text-green-400 dark:border-green-500/25'
+  if (ci.status === 'scheduled')
+    return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-400 dark:border-blue-500/25'
+  if (ci.status === 'accepted')
+    return 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-500/15 dark:text-orange-400 dark:border-orange-500/25'
+  if (ci.type === 'sent')
+    return 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-400/15 dark:text-yellow-500 dark:border-yellow-400/30'
+  return 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-500/15 dark:text-purple-400 dark:border-purple-500/25'
+}
 
-function StatsStrip({ stats }: { stats: TeamStats }) {
-  if (stats.played === 0) {
-    return <span className="text-[11px] text-slate-500 italic">No matches yet</span>
-  }
-
-  const winPct = Math.round((stats.wins / stats.played) * 100)
-
-  return (
-    <div className="flex items-center gap-2 flex-wrap">
-      {/* W-L record */}
-      <span className="text-[11px] font-semibold tabular-nums">
-        <span className="text-emerald-500">{stats.wins}W</span>
-        <span className="text-slate-400 mx-0.5">·</span>
-        <span className="text-red-500">{stats.losses}L</span>
-      </span>
-
-      {/* Win percentage */}
-      <span className="text-[11px] text-slate-500 tabular-nums">{winPct}%</span>
-
-      {/* Recent form dots — last 5, most recent on right */}
-      {stats.recentForm.length > 0 && (
-        <div className="flex items-center gap-0.5">
-          {[...stats.recentForm].reverse().slice(0, 5).reverse().map((r, i) => (
-            <span
-              key={i}
-              title={r === 'W' ? 'Win' : 'Loss'}
-              className={`inline-block h-1.5 w-1.5 rounded-full ${
-                r === 'W' ? 'bg-emerald-400' : 'bg-red-400'
-              }`}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Streak badge */}
-      {stats.winStreak >= 3 && (
-        <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-500 border border-orange-500/20">
-          <Flame className="h-2.5 w-2.5" />{stats.winStreak}
-        </span>
-      )}
-
-      {/* Net rank trend */}
-      {stats.rankGained !== 0 && (
-        <span className={`inline-flex items-center gap-0.5 text-[10px] font-semibold ${
-          stats.rankGained > 0 ? 'text-emerald-500' : 'text-red-500'
-        }`}>
-          {stats.rankGained > 0
-            ? <TrendingUp className="h-3 w-3" />
-            : <TrendingDown className="h-3 w-3" />
-          }
-          {Math.abs(stats.rankGained)}
-        </span>
-      )}
-    </div>
-  )
+function challengeStatusIcon(ci: TeamChallengeInfo) {
+  if (ci.status === 'result_pending') return <CheckCircle className="h-3 w-3 shrink-0" />
+  if (ci.status === 'scheduled')      return <Calendar    className="h-3 w-3 shrink-0" />
+  if (ci.status === 'accepted')       return <Clock       className="h-3 w-3 shrink-0" />
+  if (ci.type === 'sent')             return <Zap         className="h-3 w-3 shrink-0" />
+  return <AlertCircle className="h-3 w-3 shrink-0" />
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function LadderPage() {
-  const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
+  const [loading, setLoading]         = useState(true)
+  const [searchTerm, setSearchTerm]   = useState('')
+  const [showSearch, setShowSearch]   = useState(false)
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [tierSections, setTierSections] = useState<TierSection[]>([])
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const supabase = createClient()
   const { activeTeam } = useTeam()
+
+  const toggleExpanded = (teamId: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(teamId)) next.delete(teamId)
+      else next.add(teamId)
+      return next
+    })
+  }
+
+  const toggleSearch = () => {
+    setShowSearch(v => {
+      if (v) { setSearchTerm(''); return false }
+      // focus after paint
+      setTimeout(() => searchInputRef.current?.focus(), 50)
+      return true
+    })
+  }
+
+  // ─── Data fetch (unchanged from original) ─────────────────────────────────
 
   useEffect(() => {
     const fetchLadder = async () => {
@@ -229,7 +186,6 @@ export default function LadderPage() {
           .from('seasons').select('id').eq('is_active', true).single()
         if (!season) { toast.error('No active season found'); setLoading(false); return }
 
-        // ── Parallel: settings, tiers, ladder positions, tickets ──
         const [settingsRes, tiersRes, positionsRes, ticketsRes] = await Promise.all([
           supabase.from('league_settings')
             .select('challenge_positions_above')
@@ -249,12 +205,10 @@ export default function LadderPage() {
 
         const maxPositionsAbove = settingsRes.data?.challenge_positions_above ?? 3
         const tiers: Tier[] = tiersRes.data || []
-        // Only the currently selected team is "my team" — drives highlighting + challenge eligibility
         const userTeamIdSet = new Set(activeTeam ? [activeTeam.id] : [])
         const allPositions: any[] = positionsRes.data || []
         const allTeamIds = allPositions.map(p => p.team_id).filter(Boolean) as string[]
 
-        // Name + rank lookup from ladder data
         const teamNameMap = new Map<string, string>()
         const teamRankMap = new Map<string, number>()
         allPositions.forEach(p => {
@@ -262,9 +216,7 @@ export default function LadderPage() {
           if (p.team_id && p.rank)       teamRankMap.set(p.team_id, p.rank)
         })
 
-        // ── Fetch match results + active challenges in parallel ───────────────
         const [resultsRes, activeChalRes, unverifiedRes] = await Promise.all([
-          // All match results this season (newest first) — for stats
           allTeamIds.length > 0
             ? supabase
                 .from('match_results')
@@ -272,8 +224,6 @@ export default function LadderPage() {
                 .eq('season_id', season.id)
                 .order('created_at', { ascending: false })
             : Promise.resolve({ data: [] }),
-
-          // Active challenges for badge display
           allTeamIds.length > 0
             ? supabase
                 .from('challenges')
@@ -281,8 +231,6 @@ export default function LadderPage() {
                 .in('status', ['pending', 'accepted', 'accepted_open', 'time_pending_confirm', 'reschedule_requested', 'reschedule_pending_admin', 'scheduled'])
                 .or(allTeamIds.map(id => `challenging_team_id.eq.${id},challenged_team_id.eq.${id}`).join(','))
             : Promise.resolve({ data: [] }),
-
-          // Unverified results — contributes to "busy" state
           supabase
             .from('match_results')
             .select('id, challenge:challenges!challenge_id(id, challenging_team_id, challenged_team_id)')
@@ -290,9 +238,7 @@ export default function LadderPage() {
             .is('verified_at', null),
         ])
 
-        // ── Build stats map ──────────────────────────────────────────────────
         const statsMap = new Map<string, TeamStats>()
-
         const getOrCreate = (teamId: string): TeamStats => {
           if (!statsMap.has(teamId)) {
             statsMap.set(teamId, { wins: 0, losses: 0, played: 0, recentForm: [], rankGained: 0, winStreak: 0 })
@@ -302,66 +248,35 @@ export default function LadderPage() {
 
         for (const mr of (resultsRes.data || [])) {
           const challenge = Array.isArray(mr.challenge) ? mr.challenge[0] : mr.challenge
-
-          const winnerStats  = getOrCreate(mr.winner_team_id)
-          const loserStats   = getOrCreate(mr.loser_team_id)
-
-          winnerStats.wins++
-          winnerStats.played++
-          loserStats.losses++
-          loserStats.played++
-
-          // Recent form (already newest-first, limit to last 5)
+          const winnerStats = getOrCreate(mr.winner_team_id)
+          const loserStats  = getOrCreate(mr.loser_team_id)
+          winnerStats.wins++; winnerStats.played++
+          loserStats.losses++; loserStats.played++
           if (winnerStats.recentForm.length < 5) winnerStats.recentForm.push('W')
           if (loserStats.recentForm.length < 5)  loserStats.recentForm.push('L')
-
-          // Rank movement: challenger wins = moved up, challenged loses = moved down
           if (challenge) {
             if (mr.winner_team_id === challenge.challenging_team_id) {
-              // Challenger won → moved up one position
               winnerStats.rankGained++
               loserStats.rankGained--
             }
-            // If challenged team wins, no movement
           }
         }
-
-        // Compute win streak for each team (results are newest-first)
         for (const [, s] of statsMap) {
           let streak = 0
-          for (const r of s.recentForm) {
-            if (r === 'W') streak++
-            else break
-          }
+          for (const r of s.recentForm) { if (r === 'W') streak++; else break }
           s.winStreak = streak
         }
 
-        // ── Build challenge info map ─────────────────────────────────────────
-        // Stores ALL active challenges per team (not just first)
         const challengeMap = new Map<string, TeamChallengeInfo[]>()
-
         for (const c of (activeChalRes.data || [])) {
           const challengingName = teamNameMap.get(c.challenging_team_id) ?? 'Unknown'
           const challengedName  = teamNameMap.get(c.challenged_team_id)  ?? 'Unknown'
           const status: TeamChallengeInfo['status'] = c.status
-
           if (!challengeMap.has(c.challenging_team_id)) challengeMap.set(c.challenging_team_id, [])
-          challengeMap.get(c.challenging_team_id)!.push({
-            type: 'sent', status,
-            opponentName: challengedName,
-            opponentRank: teamRankMap.get(c.challenged_team_id) ?? null,
-            challengeId: c.id,
-          })
-
+          challengeMap.get(c.challenging_team_id)!.push({ type: 'sent', status, opponentName: challengedName, opponentRank: teamRankMap.get(c.challenged_team_id) ?? null, challengeId: c.id })
           if (!challengeMap.has(c.challenged_team_id)) challengeMap.set(c.challenged_team_id, [])
-          challengeMap.get(c.challenged_team_id)!.push({
-            type: 'received', status,
-            opponentName: challengingName,
-            opponentRank: teamRankMap.get(c.challenging_team_id) ?? null,
-            challengeId: c.id,
-          })
+          challengeMap.get(c.challenged_team_id)!.push({ type: 'received', status, opponentName: challengingName, opponentRank: teamRankMap.get(c.challenging_team_id) ?? null, challengeId: c.id })
         }
-
         for (const mr of (unverifiedRes.data || [])) {
           const c = Array.isArray(mr.challenge) ? mr.challenge[0] : mr.challenge
           if (!c) continue
@@ -375,7 +290,6 @@ export default function LadderPage() {
           }
         }
 
-        // ── Active ticket map ────────────────────────────────────────────────
         const teamTicketMap = new Map<string, ActiveTicket[]>()
         for (const tk of (ticketsRes.data || [])) {
           if (!tk.team_id) continue
@@ -383,23 +297,17 @@ export default function LadderPage() {
           teamTicketMap.get(tk.team_id)!.push({ id: tk.id, ticket_type: tk.ticket_type })
         }
 
-        // ── My teams: outgoing-busy check ────────────────────────────────────
         const myPositions = allPositions.filter(p => userTeamIdSet.has(p.team_id))
         const busyMyTeamIds = new Set(
-          myPositions
-            .map(p => p.team_id)
-            .filter(id => {
-              const cis = challengeMap.get(id) ?? []
-              return cis.some(ci => ci.type === 'sent' || ci.status === 'result_pending')
-            })
+          myPositions.map(p => p.team_id).filter(id => {
+            const cis = challengeMap.get(id) ?? []
+            return cis.some(ci => ci.type === 'sent' || ci.status === 'result_pending')
+          })
         )
 
-        // ── Active-rank helper ───────────────────────────────────────────────
         const getActiveRank = (teamRank: number) =>
           allPositions.filter(p => p.status !== 'frozen' && p.rank <= teamRank).length
 
-        // ── Rematch exemption helper ─────────────────────────────────────────
-        // Mirrors the backend rule: Diamond (all) + top 2 of Platinum are exempt
         const platinumMinRank = tiers.find((t: any) => t.name === 'Platinum')?.min_rank ?? null
         const isRematchExempt = (myPos: any) => {
           if (myPos.tier?.name === 'Diamond') return true
@@ -410,26 +318,26 @@ export default function LadderPage() {
         const rankToPos = new Map<number, any>()
         allPositions.forEach(p => rankToPos.set(p.rank, p))
 
-        // ── Build tier sections ──────────────────────────────────────────────
+        const ACCEPTED_STATUSES = ['accepted', 'accepted_open', 'time_pending_confirm',
+          'reschedule_requested', 'reschedule_pending_admin', 'scheduled', 'result_pending']
+
         const sections: TierSection[] = tiers.map(tier => {
           const maxRank = tier.max_rank ?? tier.min_rank
           const positions: PositionRow[] = []
 
           for (let rank = tier.min_rank; rank <= maxRank; rank++) {
             const pos = rankToPos.get(rank)
-
             if (!pos) {
               positions.push({ rank, status: 'vacant', team: null, tier, team_id: null, isMyTeam: false, canChallenge: false, requiresTicket: false, ticketType: null, challenges: [], stats: null, tickets: [] })
               continue
             }
 
-            const isMyTeam  = userTeamIdSet.has(pos.team_id)
-            const isFrozen  = pos.status === 'frozen'
+            const isMyTeam   = userTeamIdSet.has(pos.team_id)
+            const isFrozen   = pos.status === 'frozen'
             const challenges = challengeMap.get(pos.team_id) ?? []
             const stats      = statsMap.get(pos.team_id) ?? { wins: 0, losses: 0, played: 0, recentForm: [], rankGained: 0, winStreak: 0 }
             const tickets    = teamTicketMap.get(pos.team_id) ?? []
 
-            // ── Normal eligibility (rank distance + rematch restriction) ────────
             const normalEligible = myPositions.find((my: any) => {
               if (my.status === 'frozen') return false
               if (busyMyTeamIds.has(my.team_id)) return false
@@ -439,23 +347,17 @@ export default function LadderPage() {
               return true
             })
 
-            // ── Ticket eligibility (bypasses distance, Silver-first rule applies) ─
-            // Only evaluated when normal eligibility fails.
             let ticketEligibleTeam: any = null
             let resolvedTicketType: string | null = null
-
             if (!normalEligible) {
               for (const my of myPositions) {
                 if (my.status === 'frozen') continue
                 if (busyMyTeamIds.has(my.team_id)) continue
                 const diff = getActiveRank(my.rank) - getActiveRank(pos.rank)
-                if (diff <= 0) continue  // must be challenging up
-
+                if (diff <= 0) continue
                 const myTickets       = teamTicketMap.get(my.team_id) ?? []
                 const myTierName      = (Array.isArray(my.tier) ? my.tier[0] : my.tier)?.name
                 const hasActiveSilver = myTickets.some((tk: ActiveTicket) => tk.ticket_type === 'silver')
-
-                // Determine which ticket type (if any) enables this challenge
                 let matchingType: string | null = null
                 if (tier.name === 'Silver' && myTickets.some((tk: ActiveTicket) => tk.ticket_type === 'silver'))
                   matchingType = 'silver'
@@ -463,27 +365,13 @@ export default function LadderPage() {
                   matchingType = 'gold'
                 else if (tier.name === myTierName && myTickets.some((tk: ActiveTicket) => tk.ticket_type === 'tier'))
                   matchingType = 'tier'
-
-                if (matchingType) {
-                  ticketEligibleTeam = my
-                  resolvedTicketType = matchingType
-                  break
-                }
+                if (matchingType) { ticketEligibleTeam = my; resolvedTicketType = matchingType; break }
               }
             }
 
-            const eligibleMyTeam  = normalEligible || ticketEligibleTeam
-            const requiresTicket  = !normalEligible && !!ticketEligibleTeam
-            const ticketType      = requiresTicket ? resolvedTicketType : null
-
-            // A team is only blocked from receiving new challenges if they have already
-            // ACCEPTED an incoming challenge (or are in an active match / result pending).
-            // A team with only PENDING incoming challenges can still receive more —
-            // accepting one will dissolve the rest automatically.
-            // A team's own OUTGOING challenge (to someone above them) does NOT block
-            // them from being challenged from below.
-            const ACCEPTED_STATUSES = ['accepted', 'accepted_open', 'time_pending_confirm',
-              'reschedule_requested', 'reschedule_pending_admin', 'scheduled', 'result_pending']
+            const eligibleMyTeam = normalEligible || ticketEligibleTeam
+            const requiresTicket = !normalEligible && !!ticketEligibleTeam
+            const ticketType     = requiresTicket ? resolvedTicketType : null
             const targetIsLocked = challenges.some(ci =>
               (ci.type === 'received' && ACCEPTED_STATUSES.includes(ci.status)) ||
               ci.status === 'result_pending'
@@ -508,251 +396,354 @@ export default function LadderPage() {
     fetchLadder()
   }, [supabase, activeTeam?.id])
 
+  // ─── Filtered sections ─────────────────────────────────────────────────────
+
   const filteredSections = useMemo(() => {
-    if (!searchTerm) return tierSections
+    if (!searchTerm.trim()) return tierSections
+    const q = searchTerm.toLowerCase()
     return tierSections.map(s => ({
       ...s,
       positions: s.positions.filter(pos =>
         pos.status === 'vacant' ||
-        pos.team?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        pos.team?.player1?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        pos.team?.player2?.name.toLowerCase().includes(searchTerm.toLowerCase())
+        pos.team?.name.toLowerCase().includes(q) ||
+        pos.team?.player1?.name.toLowerCase().includes(q) ||
+        pos.team?.player2?.name.toLowerCase().includes(q)
       ),
     })).filter(s => s.positions.length > 0)
   }, [tierSections, searchTerm])
 
-  // ── Tier style maps ──────────────────────────────────────────────────────────
-  const TIER_STYLE: Record<string, { header: string; accent: string; rank: string }> = {
-    Diamond:  { header: 'from-cyan-500/10  to-transparent border-cyan-500/20',   accent: 'bg-cyan-400',   rank: 'text-cyan-400'   },
-    Platinum: { header: 'from-violet-500/10 to-transparent border-violet-500/20', accent: 'bg-violet-400', rank: 'text-violet-400' },
-    Gold:     { header: 'from-amber-500/10  to-transparent border-amber-500/20',  accent: 'bg-amber-400',  rank: 'text-amber-400'  },
-    Silver:   { header: 'from-slate-500/10  to-transparent border-slate-500/20',  accent: 'bg-slate-400',  rank: 'text-slate-400'  },
-    Bronze:   { header: 'from-orange-500/10 to-transparent border-orange-500/20', accent: 'bg-orange-400', rank: 'text-orange-400' },
-  }
-  const defaultStyle = { header: 'from-slate-700/20 to-transparent border-slate-700/30', accent: 'bg-emerald-400', rank: 'text-emerald-400' }
+  // ─── Skeleton ──────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
       <div className="space-y-3 max-w-2xl mx-auto">
-        {[...Array(7)].map((_, i) => (
-          <div key={i} className="bg-slate-800/40 rounded-2xl h-[72px] animate-pulse" />
+        <div className="flex items-center justify-between mb-2">
+          <div className="h-8 w-32 rounded-lg bg-slate-200 dark:bg-slate-800 animate-pulse" />
+          <div className="h-9 w-9 rounded-xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
+        </div>
+        <div className="h-10 w-full rounded-xl bg-slate-200 dark:bg-slate-800 animate-pulse mb-4" />
+        {[...Array(8)].map((_, i) => (
+          <div key={i} className="h-[56px] rounded-2xl bg-slate-100 dark:bg-slate-800/40 animate-pulse" />
         ))}
       </div>
     )
   }
 
+  // ─── Render ────────────────────────────────────────────────────────────────
+
   return (
-    <div className="space-y-8 max-w-2xl mx-auto">
+    <div className="space-y-6 max-w-2xl mx-auto">
 
       {/* ── Header ── */}
-      <div>
-        <h1 className="text-3xl font-bold text-white tracking-tight">Ladder</h1>
-        <p className="text-slate-400 mt-1 text-sm">Challenge teams ranked above you to climb</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Ladder</h1>
+          {!showSearch && (
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Challenge teams above you to climb</p>
+          )}
+        </div>
+        {/* Search toggle button */}
+        <button
+          onClick={toggleSearch}
+          aria-label={showSearch ? 'Close search' : 'Search ladder'}
+          className={[
+            'flex items-center justify-center h-9 w-9 rounded-xl border transition-colors shrink-0 mt-0.5',
+            showSearch
+              ? 'bg-slate-100 border-slate-300 text-slate-600 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-300'
+              : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-700',
+          ].join(' ')}
+        >
+          {showSearch ? <X className="h-4 w-4" /> : <Search className="h-4 w-4" />}
+        </button>
       </div>
 
-      {/* ── Search ── */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 text-slate-400 -translate-y-1/2 pointer-events-none" />
-        <Input
-          type="text"
-          placeholder="Search teams or players…"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-9 h-10 bg-slate-800/60 border-slate-700/50 text-white placeholder-slate-500 rounded-xl text-sm"
-        />
-      </div>
+      {/* ── Search input (shown when toggled) ── */}
+      {showSearch && (
+        <div className="relative -mt-2">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 text-slate-400 dark:text-slate-500 -translate-y-1/2 pointer-events-none" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            placeholder="Search teams or players…"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-4 h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-400 dark:focus:border-emerald-500 transition-colors"
+          />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      )}
 
-      {/* ── Tier Sections ── */}
-      {filteredSections.map(({ tier, positions }) => {
-        const style = TIER_STYLE[tier.name] ?? defaultStyle
-        const filledCount = positions.filter(p => p.status !== 'vacant').length
+      {/* ── Tier sections ── */}
+      <div className="space-y-6">
+        {filteredSections.map(({ tier, positions }) => {
+          const style = TIER_STYLE[tier.name] ?? DEFAULT_TIER_STYLE
 
-        return (
-          <div key={tier.id} className="space-y-1.5">
+          return (
+            <div key={tier.id} className="space-y-1">
 
-            {/* Tier pill header */}
-            <div className={`flex items-center gap-2.5 px-4 py-2.5 bg-gradient-to-r ${style.header} border rounded-xl`}>
-              <span className={`h-2 w-2 rounded-full ${style.accent} shrink-0`} />
-              <span className="font-semibold text-white text-sm tracking-wide">{tier.name}</span>
-              <span className="text-slate-500 text-xs ml-auto">
-                {filledCount}/{positions.length} · Ranks {tier.min_rank}–{tier.max_rank ?? tier.min_rank}
-              </span>
-            </div>
+              {/* ── Tier header ── */}
+              <div className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border ${style.border} ${style.headerBg}`}>
+                <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${style.dot}`} />
+                <span className="font-bold text-slate-800 dark:text-white text-sm tracking-wide">{tier.name}</span>
+                <span className="text-slate-400 dark:text-slate-500 text-xs ml-auto">
+                  Ranks {tier.min_rank}–{tier.max_rank ?? tier.min_rank}
+                </span>
+              </div>
 
-            {/* Position rows */}
-            <div className="space-y-1">
-              {positions.map((pos) => {
+              {/* ── Position rows ── */}
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-700/50 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700/50">
+                {positions.map(pos => {
 
-                // ── Vacant slot ──────────────────────────────────────────────
-                if (pos.status === 'vacant') {
+                  // ── Vacant ──────────────────────────────────────────────
+                  if (pos.status === 'vacant') {
+                    return (
+                      <div
+                        key={pos.rank}
+                        className="flex items-center gap-3 px-4 h-14 bg-slate-50/50 dark:bg-slate-900/20"
+                      >
+                        <span className={`w-8 text-center text-sm font-black tabular-nums shrink-0 ${style.rank} opacity-40`}>
+                          {pos.rank}
+                        </span>
+                        <span className="text-xs text-slate-400 dark:text-slate-600 italic">Vacant</span>
+                      </div>
+                    )
+                  }
+
+                  const isFrozen   = pos.status === 'frozen'
+                  const isExpanded = !!pos.team_id && expandedIds.has(pos.team_id)
+                  const hasChal    = pos.challenges.length > 0
+                  const hasStats   = (pos.stats?.played ?? 0) > 0
+                  const isExpandable = hasChal || hasStats
+
+                  // Card background
+                  const cardBg = pos.isMyTeam
+                    ? 'bg-emerald-50 dark:bg-emerald-500/8'
+                    : isFrozen
+                    ? 'bg-sky-50/60 dark:bg-blue-500/5'
+                    : 'bg-white dark:bg-slate-900/30 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+
+                  // W/L for default row
+                  const w = pos.stats?.wins   ?? 0
+                  const l = pos.stats?.losses ?? 0
+
                   return (
                     <div
                       key={pos.rank}
-                      className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-slate-700/40 bg-slate-900/20"
+                      className={`transition-colors ${cardBg}`}
                     >
-                      <span className="w-10 text-right text-sm font-bold text-slate-700 shrink-0">#{pos.rank}</span>
-                      <span className="text-slate-600 text-xs italic">Vacant</span>
+                      {/* ── Main row (min 56px) ── */}
+                      <div
+                        className={`flex items-center gap-3 px-4 min-h-[56px] py-2 ${isExpandable ? 'cursor-pointer' : ''}`}
+                        onClick={() => isExpandable && pos.team_id && toggleExpanded(pos.team_id)}
+                      >
+                        {/* Rank number */}
+                        <span className={`w-8 text-center text-base font-black tabular-nums shrink-0 leading-none ${style.rank}`}>
+                          {pos.rank}
+                        </span>
+
+                        {/* Team info */}
+                        <div className="flex-1 min-w-0 py-0.5">
+                          {/* Name + badges */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`font-semibold text-sm leading-snug ${pos.isMyTeam ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-900 dark:text-white'}`}>
+                              {pos.team?.name}
+                            </span>
+                            {pos.isMyTeam && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/30 shrink-0">
+                                You
+                              </span>
+                            )}
+                            {isFrozen && (
+                              <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 border border-sky-200 dark:bg-blue-500/15 dark:text-blue-400 dark:border-blue-500/25 shrink-0">
+                                <Snowflake className="h-2.5 w-2.5" />Frozen
+                              </span>
+                            )}
+                            {/* Busy badge — only when team has challenges */}
+                            {hasChal && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-700/50 dark:text-slate-400 dark:border-slate-600/50 shrink-0">
+                                Busy
+                                {pos.challenges.length > 1 && (
+                                  <span className="inline-flex items-center justify-center h-3.5 w-3.5 rounded-full bg-slate-500/20 dark:bg-slate-600 text-[9px] font-bold">
+                                    {pos.challenges.length}
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Player names + W/L */}
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            <span className="text-xs text-slate-500 dark:text-slate-400 leading-tight truncate max-w-[160px]">
+                              {pos.team?.player1?.name} &amp; {pos.team?.player2?.name}
+                            </span>
+                            {(w > 0 || l > 0) && (
+                              <span className="text-xs font-medium tabular-nums shrink-0">
+                                <span className="text-emerald-600 dark:text-emerald-500">{w}W</span>
+                                <span className="text-slate-400 dark:text-slate-600 mx-0.5">·</span>
+                                <span className="text-red-600 dark:text-red-500">{l}L</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Right side: action + chevron */}
+                        <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                          {/* Challenge button */}
+                          {pos.canChallenge && (
+                            <Link
+                              href={`/challenges?opponent=${pos.team_id}${pos.ticketType ? `&ticket=${pos.ticketType}` : ''}`}
+                            >
+                              <Button
+                                size="sm"
+                                className={[
+                                  'h-10 px-4 text-sm font-semibold rounded-xl gap-1.5',
+                                  pos.requiresTicket
+                                    ? 'bg-violet-600 hover:bg-violet-500 text-white dark:bg-violet-600 dark:hover:bg-violet-500'
+                                    : 'bg-emerald-600 hover:bg-emerald-500 text-white dark:bg-emerald-600 dark:hover:bg-emerald-500',
+                                ].join(' ')}
+                              >
+                                {pos.requiresTicket
+                                  ? <TicketIcon className="h-3.5 w-3.5" />
+                                  : <Zap className="h-3.5 w-3.5" />
+                                }
+                                {pos.requiresTicket
+                                  ? `${pos.ticketType!.charAt(0).toUpperCase()}${pos.ticketType!.slice(1)} Ticket`
+                                  : 'Challenge'
+                                }
+                              </Button>
+                            </Link>
+                          )}
+
+                          {/* Expand chevron (only if expandable and no challenge button, or always) */}
+                          {isExpandable && (
+                            <button
+                              onClick={() => pos.team_id && toggleExpanded(pos.team_id)}
+                              className="flex items-center justify-center h-7 w-7 rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors"
+                              aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                            >
+                              <ChevronDown
+                                className={`h-4 w-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                              />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* ── Expanded panel ── */}
+                      {isExpanded && (
+                        <div className="px-4 pb-4 pt-1 space-y-3 border-t border-slate-100 dark:border-slate-700/40">
+
+                          {/* Challenge details */}
+                          {hasChal && (
+                            <div className="space-y-2">
+                              <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Active Challenges</p>
+                              {pos.challenges.map((ci, idx) => (
+                                <div key={idx} className="flex items-center gap-2 flex-wrap">
+                                  {/* Status pill */}
+                                  <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border ${challengeStatusColors(ci)}`}>
+                                    {challengeStatusIcon(ci)}
+                                    {challengeStatusLabel(ci)}
+                                  </span>
+                                  {/* Opponent context */}
+                                  {ci.opponentName && ci.status !== 'result_pending' && (
+                                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                                      vs <span className="font-semibold text-slate-700 dark:text-slate-300">{ci.opponentName}</span>
+                                      {ci.opponentRank != null && (
+                                        <span className={`ml-1 font-semibold text-xs ${ci.type === 'sent' ? 'text-yellow-600 dark:text-yellow-500' : 'text-purple-600 dark:text-purple-400'}`}>
+                                          #{ci.opponentRank} {ci.type === 'sent' ? 'above' : 'below'}
+                                        </span>
+                                      )}
+                                    </span>
+                                  )}
+                                  {/* View link */}
+                                  <Link
+                                    href={`/challenges/${ci.challengeId}`}
+                                    className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline underline-offset-2 ml-auto"
+                                  >
+                                    View →
+                                  </Link>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Stats strip */}
+                          {hasStats && pos.stats && (
+                            <div className="space-y-1.5">
+                              <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Season Stats</p>
+                              <div className="flex items-center gap-3 flex-wrap">
+                                {/* Win % */}
+                                <span className="text-xs text-slate-600 dark:text-slate-400 tabular-nums">
+                                  {Math.round((pos.stats.wins / pos.stats.played) * 100)}% win rate
+                                  <span className="text-slate-400 dark:text-slate-600 mx-1">·</span>
+                                  {pos.stats.played} played
+                                </span>
+                                {/* Form dots — most recent on right */}
+                                {pos.stats.recentForm.length > 0 && (
+                                  <div className="flex items-center gap-1">
+                                    {[...pos.stats.recentForm].reverse().slice(0, 5).reverse().map((r, i) => (
+                                      <span
+                                        key={i}
+                                        title={r === 'W' ? 'Win' : 'Loss'}
+                                        className={`inline-block h-2 w-2 rounded-full ${r === 'W' ? 'bg-emerald-500' : 'bg-red-400'}`}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+                                {/* Hot streak */}
+                                {pos.stats.winStreak >= 3 && (
+                                  <span className="inline-flex items-center gap-0.5 text-[11px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-600 border border-orange-200 dark:bg-orange-500/15 dark:text-orange-400 dark:border-orange-500/20">
+                                    <Flame className="h-3 w-3" />{pos.stats.winStreak} streak
+                                  </span>
+                                )}
+                                {/* Rank movement */}
+                                {pos.stats.rankGained !== 0 && (
+                                  <span className={`inline-flex items-center gap-0.5 text-[11px] font-semibold ${pos.stats.rankGained > 0 ? 'text-emerald-600 dark:text-emerald-500' : 'text-red-600 dark:text-red-500'}`}>
+                                    {pos.stats.rankGained > 0
+                                      ? <TrendingUp className="h-3 w-3" />
+                                      : <TrendingDown className="h-3 w-3" />
+                                    }
+                                    {Math.abs(pos.stats.rankGained)} places this season
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
-                }
+                })}
+              </div>
 
-                // ── Filled row ───────────────────────────────────────────────
-                const isFrozen  = pos.status === 'frozen'
-                const hasChal   = pos.challenges.length > 0
-                const hasStats  = !!pos.stats && pos.stats.played > 0
-
-                const cardBase = pos.isMyTeam
-                  ? 'bg-emerald-500/8 border-emerald-500/25 ring-1 ring-emerald-500/15'
-                  : isFrozen
-                  ? 'bg-blue-500/8 border-blue-500/20'
-                  : 'bg-slate-800/50 border-slate-700/40 hover:bg-slate-800/70 hover:border-slate-600/60'
-
-                return (
-                  <div
-                    key={pos.rank}
-                    className={`flex items-start gap-3 px-4 py-3 rounded-xl border transition-all duration-150 ${cardBase}`}
-                  >
-                    {/* Rank */}
-                    <div className="w-10 text-right shrink-0 pt-0.5">
-                      <span className={`text-xl font-black tabular-nums leading-none ${style.rank}`}>
-                        #{pos.rank}
-                      </span>
-                      {/* Net rank trend arrow */}
-                      {pos.stats && pos.stats.rankGained !== 0 && (
-                        <div className={`flex items-center justify-end mt-0.5 gap-0.5 text-[10px] font-semibold ${
-                          pos.stats.rankGained > 0 ? 'text-emerald-500' : 'text-red-500'
-                        }`}>
-                          {pos.stats.rankGained > 0
-                            ? <TrendingUp className="h-2.5 w-2.5" />
-                            : <TrendingDown className="h-2.5 w-2.5" />
-                          }
-                          {Math.abs(pos.stats.rankGained)}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Team info */}
-                    <div className="flex-1 min-w-0 space-y-1">
-                      {/* Name row */}
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <Link
-                          href={`/teams/${pos.team_id}`}
-                          className={`font-semibold text-sm hover:underline underline-offset-2 ${pos.isMyTeam ? 'text-emerald-300 hover:text-emerald-200' : 'text-white hover:text-slate-300'}`}
-                        >
-                          {pos.team?.name}
-                        </Link>
-
-                        {pos.isMyTeam && (
-                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
-                            You
-                          </span>
-                        )}
-                        {isFrozen && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/25 shrink-0">
-                            <Snowflake className="h-2.5 w-2.5" />Frozen
-                          </span>
-                        )}
-                        {pos.challenges.map((ci, idx) => <ChallengePill key={idx} info={ci} />)}
-
-                        {/* Active ticket pills */}
-                        {pos.tickets.map(tk => {
-                          const colors: Record<string, string> = {
-                            tier:   'bg-violet-500/15 text-violet-300 border-violet-500/30',
-                            silver: 'bg-slate-400/15 text-slate-200 border-slate-400/30',
-                            gold:   'bg-yellow-500/15 text-yellow-300 border-yellow-500/30',
-                          }
-                          const label: Record<string, string> = {
-                            tier: 'Tier', silver: 'Silver', gold: 'Gold',
-                          }
-                          return (
-                            <span key={tk.id} className={`inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full border shrink-0 ${colors[tk.ticket_type] ?? 'bg-slate-500/15 text-slate-300 border-slate-500/30'}`}>
-                              <TicketIcon className="h-2.5 w-2.5" />
-                              {label[tk.ticket_type] ?? tk.ticket_type}
-                            </span>
-                          )
-                        })}
-                      </div>
-
-                      {/* Players */}
-                      <p className="text-xs text-slate-500 leading-tight truncate">
-                        {pos.team?.player1?.name} &amp; {pos.team?.player2?.name}
-                      </p>
-
-                      {/* Challenge opponent lines — one per active challenge */}
-                      {pos.challenges.map((ci, idx) => <ChallengeOpponentLine key={idx} info={ci} />)}
-
-                      {/* Stats strip */}
-                      {pos.stats && pos.stats.played > 0 && (
-                        <div className="pt-0.5">
-                          <StatsStrip stats={pos.stats} />
-                        </div>
-                      )}
-
-                      {/* No matches yet — show subtly */}
-                      {pos.stats && pos.stats.played === 0 && !pos.isMyTeam && (
-                        <p className="text-[11px] text-slate-600 italic">No matches played yet</p>
-                      )}
-                    </div>
-
-                    {/* Action button */}
-                    {!pos.isMyTeam && (
-                      <div className="shrink-0 ml-1 pt-0.5">
-                        {pos.canChallenge ? (
-                          <Link href={`/challenges?opponent=${pos.team?.id}${pos.ticketType ? `&ticket=${pos.ticketType}` : ''}`}>
-                            <Button
-                              size="sm"
-                              className={`h-8 px-3 text-white text-xs font-semibold rounded-lg gap-1 ${
-                                pos.requiresTicket
-                                  ? 'bg-violet-600 hover:bg-violet-500'
-                                  : 'bg-emerald-500 hover:bg-emerald-400'
-                              }`}
-                            >
-                              {pos.requiresTicket
-                                ? <TicketIcon className="h-3.5 w-3.5" />
-                                : <Zap className="h-3.5 w-3.5" />
-                              }
-                              {pos.requiresTicket ? `${pos.ticketType?.charAt(0).toUpperCase()}${pos.ticketType?.slice(1)} Ticket` : 'Challenge'}
-                            </Button>
-                          </Link>
-                        ) : hasChal ? (
-                          <div className="flex flex-col gap-1">
-                            {pos.challenges.map((ci, idx) => (
-                              <Link key={idx} href={`/challenges/${ci.challengeId}`}>
-                                <button className="flex items-center gap-0.5 text-xs text-slate-500 hover:text-slate-300 transition-colors">
-                                  View <ChevronRight className="h-3.5 w-3.5" />
-                                </button>
-                              </Link>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-slate-600 italic mt-1 inline-block">Not eligible</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
             </div>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
 
-      {/* ── Empty State ── */}
+      {/* ── Empty state ── */}
       {filteredSections.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="h-16 w-16 rounded-2xl bg-slate-800/60 border border-slate-700/50 flex items-center justify-center mb-4">
-            <Users className="h-8 w-8 text-slate-600" />
+          <div className="h-16 w-16 rounded-2xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 flex items-center justify-center mb-4">
+            <Users className="h-8 w-8 text-slate-400 dark:text-slate-600" />
           </div>
-          <h3 className="font-semibold text-white mb-1">
+          <h3 className="font-semibold text-slate-800 dark:text-white mb-1">
             {searchTerm ? 'No Results' : 'Ladder is Empty'}
           </h3>
           <p className="text-sm text-slate-500">
-            {searchTerm ? 'Try a different search' : 'No teams have joined the ladder yet'}
+            {searchTerm ? `No teams match "${searchTerm}"` : 'No teams have joined the ladder yet'}
           </p>
           {searchTerm && (
             <button
               onClick={() => setSearchTerm('')}
-              className="mt-3 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+              className="mt-3 text-xs text-emerald-600 dark:text-emerald-400 hover:underline"
             >
               Clear search
             </button>
