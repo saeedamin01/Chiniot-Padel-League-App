@@ -844,17 +844,30 @@ export default function ChallengesPage() {
           </Card>
         ))}
 
-        {matchHistory.filter(c => c.matchResult?.verified_at || c.matchResult?.auto_verified).length > 0 ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {matchHistory
-              .filter(c => c.matchResult?.verified_at || c.matchResult?.auto_verified)
-              .map(c => <HistoryCard key={c.id} challenge={c} />)}
-          </div>
-        ) : matchHistory.length === 0 ? (
-          <Card className="bg-slate-800/40 border-slate-700/30 p-6 text-center">
-            <p className="text-slate-500 text-sm">No completed matches yet</p>
-          </Card>
-        ) : null}
+        {(() => {
+          // Show a card for: verified results, forfeits without a result row,
+          // and played challenges with no result yet (edge case).
+          const historyCards = matchHistory.filter(c =>
+            c.matchResult?.verified_at ||
+            c.matchResult?.auto_verified ||
+            (c.status === 'forfeited' && !c.matchResult)
+          )
+          if (historyCards.length > 0) {
+            return (
+              <div className="grid gap-3 md:grid-cols-2">
+                {historyCards.map(c => <HistoryCard key={c.id} challenge={c} />)}
+              </div>
+            )
+          }
+          if (matchHistory.length === 0) {
+            return (
+              <Card className="bg-slate-800/40 border-slate-700/30 p-6 text-center">
+                <p className="text-slate-500 text-sm">No completed matches yet</p>
+              </Card>
+            )
+          }
+          return null
+        })()}
       </section>
 
       {/* ── Dissolved Challenges ── */}
