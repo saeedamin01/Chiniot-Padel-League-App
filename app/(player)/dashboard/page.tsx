@@ -272,8 +272,8 @@ export default function DashboardPage() {
       .eq('season_id', sid).eq('is_active', true).order('name')
     setVenues(venueData || [])
 
-    // W/L + all results for stats (verified only)
-    const [{ count: w }, { count: l }, allResultsRes] = await Promise.all([
+    // W/L + all results for stats (verified match results + forfeit losses)
+    const [{ count: w }, { count: l }, allResultsRes, forfeitAsChallenger, forfeitAsChallenged] = await Promise.all([
       supabase.from('match_results').select('id', { count: 'exact' })
         .eq('season_id', sid).eq('winner_team_id', teamId).not('verified_at', 'is', null),
       supabase.from('match_results').select('id', { count: 'exact' })
@@ -282,9 +282,18 @@ export default function DashboardPage() {
         .select('winner_team_id, loser_team_id, created_at')
         .eq('season_id', sid).not('verified_at', 'is', null)
         .order('created_at', { ascending: false }),
+      // Forfeits where this team was the challenger and forfeited
+      supabase.from('challenges').select('id', { count: 'exact', head: true })
+        .eq('season_id', sid).eq('status', 'forfeited')
+        .eq('forfeit_by', 'challenger').eq('challenging_team_id', teamId),
+      // Forfeits where this team was the challenged and forfeited
+      supabase.from('challenges').select('id', { count: 'exact', head: true })
+        .eq('season_id', sid).eq('status', 'forfeited')
+        .eq('forfeit_by', 'challenged').eq('challenged_team_id', teamId),
     ])
+    const forfeitLossCount = (forfeitAsChallenger.count ?? 0) + (forfeitAsChallenged.count ?? 0)
     setWins(w ?? 0)
-    setLosses(l ?? 0)
+    setLosses((l ?? 0) + forfeitLossCount)
 
     // Last 5 verified match results for this team
     const { data: historyData } = await supabase
