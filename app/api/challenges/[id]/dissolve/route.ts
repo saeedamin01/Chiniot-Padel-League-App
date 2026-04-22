@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
+import { sendEventEmail } from '@/lib/email/events'
 
 export const dynamic = 'force-dynamic'
 
@@ -67,6 +68,32 @@ export async function POST(
       notes: 'Challenge dissolved by admin',
       created_at: now.toISOString(),
     })
+
+    // Fire-and-forget dissolution emails to both teams
+    const [{ data: challengingTeamData }, { data: challengedTeamData }] = await Promise.all([
+      adminClient.from('teams').select('player1_id, player2_id, name').eq('id', challenge.challenging_team_id).single(),
+      adminClient.from('teams').select('player1_id, player2_id, name').eq('id', challenge.challenged_team_id).single(),
+    ])
+
+    if (challengingTeamData && challengedTeamData) {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      const dissolvedPayload = {
+        challengeCode: challenge.challenge_code,
+        challengingTeamName: challengingTeamData.name,
+        challengedTeamName: challengedTeamData.name,
+        reason: reason ?? 'Dissolved by admin.',
+        challengeUrl: `${appUrl}/challenges/${params.id}`,
+      }
+
+      const allPlayerIds = [
+        challengingTeamData.player1_id,
+        challengingTeamData.player2_id,
+        challengedTeamData.player1_id,
+        challengedTeamData.player2_id,
+      ].filter(Boolean) as string[]
+
+      sendEventEmail('challenge_dissolved', allPlayerIds, dissolvedPayload).catch(() => {})
+    }
 
     return NextResponse.json({ challenge: updated })
   } catch (err) {

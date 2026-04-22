@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { sendEmail, genericNotificationEmail, challengeReceivedEmail, matchResultEmail } from '@/lib/email/mailer'
+import { sendEmail, genericNotificationEmail } from '@/lib/email/mailer'
 
 export async function createNotification(data: {
   playerId: string

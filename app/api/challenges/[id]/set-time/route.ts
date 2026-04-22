@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { addHours } from 'date-fns'
 import { logChallengeEvent } from '@/lib/challenges/events'
+import { sendEventEmail } from '@/lib/email/events'
 
 export const dynamic = 'force-dynamic'
 
@@ -149,6 +150,21 @@ export async function POST(
           email_sent: false,
         },
       ])
+    }
+
+    // Fire-and-forget email to the confirming team — let them know a time is set
+    if (confirmingTeam) {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      const recipients = [confirmingTeam.player1_id, confirmingTeam.player2_id].filter(Boolean) as string[]
+      sendEventEmail('match_scheduled', recipients, {
+        challengeCode: challenge.challenge_code,
+        teamName: confirmingTeam.name,
+        opponentName: submittingTeam.name,
+        scheduledTime: confirmedDate.toISOString(),
+        venueName: null,
+        venueAddress: null,
+        challengeUrl: `${appUrl}/challenges/${params.id}`,
+      }).catch(() => {})
     }
 
     await adminClient.from('audit_log').insert({

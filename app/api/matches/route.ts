@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { addMinutes } from 'date-fns'
 import { createNotification } from '@/lib/notifications/service'
 import { logChallengeEvent } from '@/lib/challenges/events'
+import { sendEventEmail } from '@/lib/email/events'
 
 export const dynamic = 'force-dynamic'
 
@@ -146,9 +147,22 @@ export async function POST(request: NextRequest) {
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
+  // Fetch reporting team name for email content
+  const { data: reportingTeam } = await adminClient
+    .from('teams')
+    .select('name')
+    .eq('id', reportingTeamId)
+    .single()
+
+  const set1Str = `${set1Challenger}-${set1Challenged}`
+  const set2Str = `${set2Challenger}-${set2Challenged}`
+  const stbStr = supertiebreakChallenger != null ? `${supertiebreakChallenger}-${supertiebreakChallenged}` : null
+
+
   if (opposingTeam) {
     for (const player of [opposingTeam.player1, opposingTeam.player2]) {
       if (!player) continue
+      // In-app notification (no email — we send the typed email below)
       await createNotification({
         playerId: player.id,
         teamId: opposingTeamId,
@@ -156,8 +170,45 @@ export async function POST(request: NextRequest) {
         title: 'Match Result Reported',
         message: `A result has been submitted for your match. Please verify it within ${verifyMinutes} minutes.`,
         actionUrl: `${appUrl}/challenges/${challengeId}`,
-        sendEmail: true,
+        sendEmail: false,
       })
+    }
+
+    // Fire-and-forget typed emails — one for verifier, one for reporter
+    const opposingPlayerIds = [opposingTeam.player1?.id, opposingTeam.player2?.id].filter(Boolean) as string[]
+
+    const sharedPayload = {
+      challengeCode: challenge.challenge_code,
+      reporterTeamName: reportingTeam?.name ?? 'Your opponent',
+      opponentName: opposingTeam.name,
+      set1: set1Str,
+      set2: set2Str,
+      supertiebreak: stbStr,
+      reportedWinnerName: winnerName,
+      verifyDeadline,
+      challengeUrl: `${appUrl}/challenges/${challengeId}`,
+    }
+
+    // Verifier (opposing team) — "please verify"
+    sendEventEmail('result_submitted', opposingPlayerIds, {
+      ...sharedPayload,
+      isReporter: false,
+    }).catch(() => {})
+
+    // Reporter (submitting team) — "score submitted, waiting for verification"
+    const { data: reportingTeamFull } = await adminClient
+      .from('teams')
+      .select('player1_id, player2_id')
+      .eq('id', reportingTeamId)
+      .single()
+
+    if (reportingTeamFull) {
+      const reporterIds = [reportingTeamFull.player1_id, reportingTeamFull.player2_id].filter(Boolean) as string[]
+      sendEventEmail('result_submitted', reporterIds, {
+        ...sharedPayload,
+        opponentName: opposingTeam.name,
+        isReporter: true,
+      }).catch(() => {})
     }
   }
 

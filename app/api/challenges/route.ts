@@ -6,6 +6,7 @@ import { generateChallengeCode } from '@/lib/utils'
 import { addHours, addDays } from 'date-fns'
 import type { TicketType } from '@/types'
 import { logChallengeEvent } from '@/lib/challenges/events'
+import { sendEventEmail } from '@/lib/email/events'
 
 export const dynamic = 'force-dynamic'
 
@@ -166,7 +167,7 @@ export async function POST(request: NextRequest) {
     // Notify the challenged team
     const { data: challengedTeamData } = await adminClient
       .from('teams')
-      .select('player1_id, player2_id')
+      .select('player1_id, player2_id, name')
       .eq('id', challengedTeamId)
       .single()
 
@@ -195,6 +196,21 @@ export async function POST(request: NextRequest) {
           email_sent: false,
         },
       ])
+    }
+
+    // Fire-and-forget email to challenged team players
+    if (challengedTeamData) {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      const recipients = [challengedTeamData.player1_id, challengedTeamData.player2_id].filter(Boolean) as string[]
+      sendEventEmail('challenge_received', recipients, {
+        challengedTeamName: (challengedTeamData as any).name ?? '',
+        challengingTeamName: challengingTeam.name,
+        challengeCode: challenge.challenge_code,
+        slots: [slot1, slot2, slot3].filter(Boolean),
+        deadline: challenge.accept_deadline,
+        acceptUrl: `${appUrl}/challenges/${challenge.id}`,
+        ticketType: ticketType || null,
+      }).catch(() => {})
     }
 
     // Audit log
