@@ -32,6 +32,7 @@ const navLinks = [
   { href: '/ladder', label: 'Ladder' },
   { href: '/challenges', label: 'Challenges' },
   { href: '/league', label: 'League' },
+  { href: '/chat', label: 'Chat' },
 ]
 
 const TIER_COLORS: Record<string, string> = {

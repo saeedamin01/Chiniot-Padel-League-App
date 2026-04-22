@@ -390,14 +390,23 @@ export default function ChallengesPage() {
     return mr.reported_by_team_id !== myTeamId
   })
 
-  // Stats (only verified matches)
+  // Stats — verified results + forfeits both count
   const verifiedHistory = matchHistory.filter(c => {
     const mr = c.matchResult
     return mr && (mr.verified_at || mr.auto_verified)
   })
+  // Forfeited challenges where I was the one who forfeited (= a loss with no result record)
+  const forfeitLosses = matchHistory.filter(c => {
+    if (c.status !== 'forfeited' || !c.forfeit_by) return false
+    const myTeamId = c.isOutgoing ? c.challenging_team_id : c.challenged_team_id
+    const forfeitingTeamId = c.forfeit_by === 'challenger' ? c.challenging_team_id : c.challenged_team_id
+    return forfeitingTeamId === myTeamId
+  })
+
   const statsWins   = verifiedHistory.filter(c => c.matchResult?.winner_team_id === (c.isOutgoing ? c.challenging_team_id : c.challenged_team_id)).length
-  const statsLosses = verifiedHistory.length - statsWins
-  const statsWinPct = verifiedHistory.length > 0 ? Math.round((statsWins / verifiedHistory.length) * 100) : 0
+  const statsLosses = (verifiedHistory.length - statsWins) + forfeitLosses.length
+  const statsTotal  = verifiedHistory.length + forfeitLosses.length
+  const statsWinPct = statsTotal > 0 ? Math.round((statsWins / statsTotal) * 100) : 0
 
   // ── Status badge helper ─────────────────────────────────────────────────
   function statusBadge(challenge: EnhancedChallenge) {
@@ -797,11 +806,11 @@ export default function ChallengesPage() {
         </div>
 
         {/* Stats bar */}
-        {verifiedHistory.length > 0 && (
+        {statsTotal > 0 && (
           <div className="grid grid-cols-4 gap-2">
             <Card className="bg-slate-800/60 border-slate-700/50 p-3 text-center">
               <p className="text-[10px] text-slate-400 mb-0.5 uppercase tracking-wide">Played</p>
-              <p className="text-xl font-bold text-white">{verifiedHistory.length}</p>
+              <p className="text-xl font-bold text-white">{statsTotal}</p>
             </Card>
             <Card className="bg-slate-800/60 border-slate-700/50 p-3 text-center">
               <p className="text-[10px] text-slate-400 mb-0.5 uppercase tracking-wide">Wins</p>
