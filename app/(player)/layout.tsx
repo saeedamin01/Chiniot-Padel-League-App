@@ -105,7 +105,7 @@ export default function PlayerLayout({ children }: { children: React.ReactNode }
         />
       )}
       {/* pwa-main handles safe-area padding on mobile, regular py-8 on desktop */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pwa-main">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 md:py-8 pwa-main">
         {children}
       </main>
       {/* Bottom tab navigation — mobile only, replaces hamburger menu */}

@@ -611,9 +611,9 @@ export default function LadderPage() {
 
                         {/* Team info */}
                         <div className="flex-1 min-w-0 py-0.5">
-                          {/* Name + badges */}
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className={`font-semibold text-sm leading-snug ${pos.isMyTeam ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-900 dark:text-white'}`}>
+                          {/* Row 1: Name + You/Frozen badges — always single line */}
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className={`font-semibold text-sm leading-snug truncate ${pos.isMyTeam ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-900 dark:text-white'}`}>
                               {pos.team?.name}
                             </span>
                             {pos.isMyTeam && (
@@ -626,21 +626,11 @@ export default function LadderPage() {
                                 <Snowflake className="h-2.5 w-2.5" />Frozen
                               </span>
                             )}
-                            {/* Per-challenge inline status chips */}
-                            {pos.challenges.map((ci, idx) => (
-                              <span
-                                key={idx}
-                                className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 ${challengeInlineColors(ci)}`}
-                              >
-                                {challengeInlineIcon(ci)}
-                                {challengeInlineLabel(ci)}
-                              </span>
-                            ))}
                           </div>
 
-                          {/* Player names + W/L */}
-                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                            <span className="text-xs text-slate-500 dark:text-slate-400 leading-tight truncate max-w-[160px]">
+                          {/* Row 2: Player names + W/L */}
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-xs text-slate-500 dark:text-slate-400 leading-tight truncate">
                               {pos.team?.player1?.name} &amp; {pos.team?.player2?.name}
                             </span>
                             {(w > 0 || l > 0) && (
@@ -651,6 +641,21 @@ export default function LadderPage() {
                               </span>
                             )}
                           </div>
+
+                          {/* Row 3: Status chips — only if active challenges */}
+                          {pos.challenges.length > 0 && (
+                            <div className="flex items-center gap-1 mt-1 flex-wrap">
+                              {pos.challenges.map((ci, idx) => (
+                                <span
+                                  key={idx}
+                                  className={`inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${challengeInlineColors(ci)}`}
+                                >
+                                  {challengeInlineIcon(ci)}
+                                  <span className="truncate max-w-[140px]">{challengeInlineLabel(ci)}</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
 
                         {/* Right side: action + chevron */}
