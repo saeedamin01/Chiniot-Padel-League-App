@@ -701,32 +701,6 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Team selector for multi-team players */}
-        {teams.length > 1 && (
-          <div className="flex gap-2 flex-wrap mb-4">
-            {teams.map(team => {
-              const isActive = team.id === activeTeam?.id
-              const TIER: Record<string, string> = {
-                Diamond:  'border-cyan-300 text-cyan-700 bg-cyan-50 dark:border-cyan-500/40 dark:text-cyan-400 dark:bg-cyan-500/10',
-                Platinum: 'border-violet-300 text-violet-700 bg-violet-50 dark:border-violet-500/40 dark:text-violet-400 dark:bg-violet-500/10',
-                Gold:     'border-amber-300 text-amber-700 bg-amber-50 dark:border-amber-500/40 dark:text-amber-400 dark:bg-amber-500/10',
-                Silver:   'border-slate-300 text-slate-600 bg-slate-50 dark:border-slate-500/40 dark:text-slate-300 dark:bg-slate-500/10',
-                Bronze:   'border-orange-300 text-orange-700 bg-orange-50 dark:border-orange-500/40 dark:text-orange-400 dark:bg-orange-500/10',
-              }
-              const tierCls = TIER[team.tierName ?? ''] ?? 'border-slate-200 text-slate-600 bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:bg-slate-800/60'
-              return (
-                <button key={team.id} onClick={() => switchTeam(team.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm font-medium transition-all
-                    ${isActive ? `${tierCls} ring-2 ring-offset-1 ring-current/40` : 'border-slate-200 text-slate-500 bg-white hover:border-slate-300 dark:border-slate-700 dark:text-slate-400 dark:bg-slate-800/60'}`}
-                >
-                  <Users className="h-3.5 w-3.5 shrink-0" />
-                  {team.name}
-                  {isActive && <Check className="h-3.5 w-3.5 ml-0.5" />}
-                </button>
-              )
-            })}
-          </div>
-        )}
 
         {/* Stats row */}
         {activeTeam && (
