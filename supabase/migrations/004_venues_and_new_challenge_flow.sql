@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS venues (
 -- Auto-update updated_at
 CREATE OR REPLACE TRIGGER venues_updated_at
   BEFORE UPDATE ON venues
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- RLS: admins can manage, players can read active venues
 ALTER TABLE venues ENABLE ROW LEVEL SECURITY;

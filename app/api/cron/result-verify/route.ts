@@ -2,12 +2,12 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { processMatchResult } from '@/lib/ladder/engine'
 import { logChallengeEvent } from '@/lib/challenges/events'
+import { createNotification } from '@/lib/notifications/service'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
-    // Verify cron secret
     const authHeader = request.headers.get('authorization')
     const cronSecret = process.env.CRON_SECRET
 
@@ -29,10 +29,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, message: 'No active season' })
     }
 
-    // Find unverified results past verify_deadline
+    // Step 1: find all match_results past their verify_deadline that haven't been verified
     const { data: pendingResults } = await adminClient
       .from('match_results')
-      .select('*, challenge:challenges(*)')
+      .select('id, challenge_id, winner_team_id, loser_team_id, verify_deadline')
       .eq('season_id', season.id)
       .is('verified_at', null)
       .eq('auto_verified', false)
@@ -43,123 +43,123 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, message: 'No pending results', processed: 0 })
     }
 
+    // Step 2: of those, only keep challenges still in result_pending
+    // (avoid processing dissolved/forfeited/already-played challenges)
+    const challengeIds = pendingResults.map(r => r.challenge_id)
+    const { data: resultPendingChallenges } = await adminClient
+      .from('challenges')
+      .select('id')
+      .in('id', challengeIds)
+      .eq('status', 'result_pending')
+
+    const resultPendingIds = new Set((resultPendingChallenges || []).map(c => c.id))
+    const eligible = pendingResults.filter(r => resultPendingIds.has(r.challenge_id))
+
+    if (eligible.length === 0) {
+      return NextResponse.json({ success: true, message: 'No eligible results', processed: 0 })
+    }
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
     let processed = 0
 
-    for (const result of pendingResults) {
-      const challenge = result.challenge
-
-      // Process the match result
+    for (const result of eligible) {
+      // Process ladder movement — uses challenge_id directly, no embedded object needed
       const processResult = await processMatchResult(
-        challenge.id,
+        result.challenge_id,
         result.winner_team_id,
         result.loser_team_id
       )
 
-      if (processResult.success) {
-        // Auto-verify the result
-        await adminClient
-          .from('match_results')
-          .update({
-            verified_at: now.toISOString(),
-            auto_verified: true,
-          })
-          .eq('id', result.id)
+      if (!processResult.success) continue
 
-        // Update challenge to played
-        await adminClient
-          .from('challenges')
-          .update({ status: 'played' })
-          .eq('id', challenge.id)
+      // Mark result verified
+      await adminClient
+        .from('match_results')
+        .update({ verified_at: now.toISOString(), auto_verified: true })
+        .eq('id', result.id)
 
-        // Get teams for notification
-        const { data: winnerTeam } = await adminClient
-          .from('teams')
-          .select('player1_id, player2_id, name')
-          .eq('id', result.winner_team_id)
-          .single()
+      // Unlock both teams
+      await adminClient
+        .from('challenges')
+        .update({ status: 'played' })
+        .eq('id', result.challenge_id)
 
-        const { data: loserTeam } = await adminClient
-          .from('teams')
-          .select('player1_id, player2_id, name')
-          .eq('id', result.loser_team_id)
-          .single()
+      await adminClient.from('audit_log').insert({
+        actor_email: 'system',
+        action_type: 'result_auto_verified',
+        entity_type: 'match_result',
+        entity_id: result.id,
+        notes: 'Result auto-verified due to verification deadline expiration',
+        created_at: now.toISOString(),
+      })
 
-        // Notify teams
-        if (winnerTeam) {
-          await adminClient.from('notifications').insert([
-            {
-              player_id: winnerTeam.player1_id,
-              team_id: result.winner_team_id,
-              type: 'result_verified',
-              title: 'Match Result Verified',
-              message: `Your win against ${loserTeam?.name} has been auto-verified!`,
-              is_read: false,
-              email_sent: false,
-            },
-            {
-              player_id: winnerTeam.player2_id,
-              team_id: result.winner_team_id,
-              type: 'result_verified',
-              title: 'Match Result Verified',
-              message: `Your win against ${loserTeam?.name} has been auto-verified!`,
-              is_read: false,
-              email_sent: false,
-            },
+      await logChallengeEvent({
+        challengeId: result.challenge_id,
+        eventType: 'result_auto_verified',
+        actorRole: 'system',
+        data: {
+          match_result_id: result.id,
+          winner_team_id: result.winner_team_id,
+          loser_team_id: result.loser_team_id,
+        },
+        timestamp: now.toISOString(),
+      })
+
+      // Fire-and-forget notifications to all 4 players
+      const challengeUrl = `${appUrl}/challenges/${result.challenge_id}`;
+      (async () => {
+        try {
+          const [{ data: winnerTeam }, { data: loserTeam }] = await Promise.all([
+            adminClient.from('teams')
+              .select('name, player1:players!player1_id(id,name), player2:players!player2_id(id,name)')
+              .eq('id', result.winner_team_id).single(),
+            adminClient.from('teams')
+              .select('name, player1:players!player1_id(id,name), player2:players!player2_id(id,name)')
+              .eq('id', result.loser_team_id).single(),
           ])
-        }
 
-        if (loserTeam) {
-          await adminClient.from('notifications').insert([
-            {
-              player_id: loserTeam.player1_id,
-              team_id: result.loser_team_id,
-              type: 'result_verified',
-              title: 'Match Result Verified',
-              message: `Your loss against ${winnerTeam?.name} has been auto-verified.`,
-              is_read: false,
-              email_sent: false,
-            },
-            {
-              player_id: loserTeam.player2_id,
-              team_id: result.loser_team_id,
-              type: 'result_verified',
-              title: 'Match Result Verified',
-              message: `Your loss against ${winnerTeam?.name} has been auto-verified.`,
-              is_read: false,
-              email_sent: false,
-            },
-          ])
-        }
+          const notifs: Promise<unknown>[] = []
 
-        // Log to audit
-        await adminClient.from('audit_log').insert({
-          actor_email: 'system',
-          action_type: 'result_auto_verified',
-          entity_type: 'match_result',
-          entity_id: result.id,
-          notes: 'Result auto-verified due to verification deadline expiration',
-          created_at: now.toISOString(),
-        })
+          if (winnerTeam) {
+            for (const player of [(winnerTeam as any).player1, (winnerTeam as any).player2]) {
+              if (!player) continue
+              notifs.push(createNotification({
+                playerId: player.id,
+                teamId: result.winner_team_id,
+                type: 'result_verified',
+                title: '✅ Match result auto-verified',
+                message: `Your win against ${(loserTeam as any)?.name ?? 'the opposing team'} has been confirmed automatically. The ladder has been updated.`,
+                actionUrl: challengeUrl,
+                sendEmail: true,
+              }))
+            }
+          }
 
-        await logChallengeEvent({
-          challengeId: challenge.id,
-          eventType: 'result_auto_verified',
-          actorRole: 'system',
-          data: {
-            match_result_id: result.id,
-            winner_team_id: result.winner_team_id,
-            loser_team_id: result.loser_team_id,
-          },
-          timestamp: now.toISOString(),
-        })
+          if (loserTeam) {
+            for (const player of [(loserTeam as any).player1, (loserTeam as any).player2]) {
+              if (!player) continue
+              notifs.push(createNotification({
+                playerId: player.id,
+                teamId: result.loser_team_id,
+                type: 'result_verified',
+                title: '✅ Match result auto-verified',
+                message: `The result of your match against ${(winnerTeam as any)?.name ?? 'the opposing team'} has been automatically confirmed.`,
+                actionUrl: challengeUrl,
+                sendEmail: true,
+              }))
+            }
+          }
 
-        processed++
-      }
+          await Promise.all(notifs)
+        } catch { /* fire-and-forget */ }
+      })()
+
+      processed++
     }
 
     return NextResponse.json({
       success: true,
-      message: `Processed ${processed} result(s)`,
+      message: `Auto-verified ${processed} result(s)`,
       processed,
     })
   } catch (err) {

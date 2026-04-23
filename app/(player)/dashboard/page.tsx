@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import {
@@ -186,6 +187,7 @@ function DashboardSkeleton() {
 
 export default function DashboardPage() {
   const supabase = createClient()
+  const router = useRouter()
   const { activeTeam, teams, switchTeam, seasonId, refresh: refreshTeam } = useTeam()
   const selectedTeamId = activeTeam?.id ?? null
 
@@ -204,6 +206,8 @@ export default function DashboardPage() {
   const [scoreVenueId, setScoreVenueId]     = useState('')
   const [scoreSubmitting, setScoreSubmitting] = useState(false)
   const [venues, setVenues]                 = useState<Array<{ id: string; name: string; address?: string | null }>>([])
+  const [chatLoading, setChatLoading]       = useState<string | null>(null)
+  const [activeTickets, setActiveTickets]   = useState<Array<{ id: string; ticket_type: string }>>([])
 
   type OppStats = { wins: number; losses: number; played: number; recentForm: ('W' | 'L')[]; winStreak: number }
   const [opponentStatsMap, setOpponentStatsMap] = useState<Map<string, OppStats>>(new Map())
@@ -227,7 +231,7 @@ export default function DashboardPage() {
 
   // ── Fetch challenges ──────────────────────────────────────────────────────
   const fetchChallenges = useCallback(async (teamId: string, sid: string) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('challenges')
       .select(`
         *,
@@ -242,27 +246,34 @@ export default function DashboardPage() {
           player2:players!player2_id(id, name, phone)
         ),
         venue:venues!venue_id(id, name, address),
-        match_result:match_results(*)
+        match_result:match_results!challenge_id(*)
       `)
       .eq('season_id', sid)
       .or(`challenging_team_id.eq.${teamId},challenged_team_id.eq.${teamId}`)
       .in('status', [
         'pending', 'accepted', 'accepted_open', 'time_pending_confirm',
         'reschedule_requested', 'reschedule_pending_admin',
-        'revision_proposed', 'scheduled', 'played',
+        'revision_proposed', 'scheduled', 'result_pending', 'played',
       ])
       .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('[Dashboard] fetchChallenges error:', error)
+    }
 
     const normalised = (data || []).map(c => ({
       ...c,
       match_result: Array.isArray(c.match_result) ? (c.match_result[0] ?? null) : (c.match_result ?? null),
     })) as DashboardChallenge[]
 
-    // Only keep played challenges if their result is NOT yet verified
+    // Keep result_pending always; keep played only if not yet verified (legacy compat)
     const active = normalised.filter(c => {
-      if (c.status !== 'played') return true
-      const mr = c.match_result
-      return mr ? !mr.verified_at : true
+      if (c.status === 'result_pending') return true
+      if (c.status === 'played') {
+        const mr = c.match_result
+        return mr ? !mr.verified_at : false
+      }
+      return true
     })
     setChallenges(active)
 
@@ -364,6 +375,15 @@ export default function DashboardPage() {
     } else {
       setOppScheduledMap(new Map())
     }
+
+    // Active (usable) tickets for this team
+    const { data: ticketData } = await supabase
+      .from('tickets')
+      .select('id, ticket_type')
+      .eq('team_id', teamId)
+      .eq('season_id', sid)
+      .eq('status', 'active')
+    setActiveTickets(ticketData || [])
   }, [supabase])
 
   // ── Re-fetch when active team or season changes ──────────────────────────
@@ -376,6 +396,7 @@ export default function DashboardPage() {
       setOpponentStatsMap(new Map())
       setOppScheduledMap(new Map())
       setRecentMatches([])
+      setActiveTickets([])
       fetchChallenges(selectedTeamId, seasonId).finally(() => setLoading(false))
     } else {
       setLoading(false)
@@ -385,6 +406,17 @@ export default function DashboardPage() {
   const reload = useCallback(async () => {
     if (selectedTeamId && seasonId) await fetchChallenges(selectedTeamId, seasonId)
   }, [selectedTeamId, seasonId, fetchChallenges])
+
+  // ── Realtime: re-fetch when any challenge or match result changes ──────────
+  useEffect(() => {
+    if (!selectedTeamId) return
+    const channel = supabase
+      .channel('dashboard-live-updates')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'challenges' }, () => { reload() })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'match_results' }, () => { reload() })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [supabase, selectedTeamId, reload])
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
@@ -478,6 +510,20 @@ export default function DashboardPage() {
     finally { setFreezeLoading(false) }
   }
 
+  async function openChat(challengeId: string) {
+    setChatLoading(challengeId)
+    try {
+      const res = await fetch(`/api/chat/challenge/${challengeId}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.chatId) router.push(`/chat/${data.chatId}`)
+      } else {
+        toast.error('Chat not available yet')
+      }
+    } catch { toast.error('Failed to open chat') }
+    finally { setChatLoading(null) }
+  }
+
   function openForfeit(c: DashboardChallenge) {
     const myTeamId = c.challenging_team_id === selectedTeamId ? c.challenging_team_id : c.challenged_team_id
     setForfeitTarget({ id: c.id, code: c.challenge_code, myTeamId, opponent: opponent(c).name ?? 'opponent' })
@@ -535,6 +581,19 @@ export default function DashboardPage() {
     )
   }
 
+  const OpenChatBtn = ({ id }: { id: string }) => (
+    <button
+      onClick={() => openChat(id)}
+      disabled={chatLoading === id}
+      className="flex items-center gap-1.5 justify-center text-xs text-slate-400 hover:text-emerald-400 dark:hover:text-emerald-400 transition-colors mt-2 w-full py-0.5"
+    >
+      {chatLoading === id
+        ? <Loader2 className="h-3 w-3 animate-spin" />
+        : <MessageCircle className="h-3 w-3" />}
+      Open Chat
+    </button>
+  )
+
   const fmtDate = (iso: string | null | undefined) => {
     if (!iso) return '—'
     return new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true })
@@ -542,16 +601,29 @@ export default function DashboardPage() {
 
   const slots = (c: DashboardChallenge) => [c.slot_1, c.slot_2, c.slot_3].filter(Boolean) as string[]
 
+  // Always shows "Challenger vs Challenged" regardless of which team you are
+  const matchup = (c: DashboardChallenge) =>
+    `${c.challenging_team.name} vs ${c.challenged_team.name}`
+
   // ── Challenge categorisation ──────────────────────────────────────────────
 
   const receivedPending      = challenges.filter(c => c.challenged_team_id === selectedTeamId && c.status === 'pending')
   const awaitingConfirm      = challenges.filter(c => c.challenging_team_id === selectedTeamId && c.status === 'accepted')
   const needToEnterTime      = challenges.filter(c =>
     (c.challenged_team_id === selectedTeamId || c.challenging_team_id === selectedTeamId) && c.status === 'accepted_open')
-  const timePendingMyConfirm = challenges.filter(c => c.challenging_team_id === selectedTeamId && c.status === 'time_pending_confirm')
+  // time_pending_confirm: the team that did NOT submit the time confirms.
+  // time_submitted_by_team_id tracks who entered it (set-time path).
+  // Fallback (null submitter) = accepted path where challenger always confirms.
+  const timePendingMyConfirm = challenges.filter(c => {
+    if (c.status !== 'time_pending_confirm') return false
+    const inChallenge = c.challenging_team_id === selectedTeamId || c.challenged_team_id === selectedTeamId
+    if (!inChallenge) return false
+    const submitter = c.time_submitted_by_team_id
+    return submitter ? submitter !== selectedTeamId : c.challenging_team_id === selectedTeamId
+  })
   const pendingVerify        = challenges.filter(c => {
     const mr = c.match_result
-    if (!mr || c.status !== 'played') return false
+    if (!mr || c.status !== 'result_pending') return false
     return (c.challenging_team_id === selectedTeamId || c.challenged_team_id === selectedTeamId)
       && !mr.verified_at && mr.reported_by_team_id !== selectedTeamId
   })
@@ -565,13 +637,20 @@ export default function DashboardPage() {
 
   const sentPending          = challenges.filter(c => c.challenging_team_id === selectedTeamId && c.status === 'pending')
   const sentAccepted         = challenges.filter(c => c.challenged_team_id === selectedTeamId && c.status === 'accepted')
-  const timeEnteredWaiting   = challenges.filter(c => c.challenged_team_id === selectedTeamId && c.status === 'time_pending_confirm')
+  // Waiting: I submitted the time, waiting for the other team to confirm.
+  const timeEnteredWaiting   = challenges.filter(c => {
+    if (c.status !== 'time_pending_confirm') return false
+    const inChallenge = c.challenging_team_id === selectedTeamId || c.challenged_team_id === selectedTeamId
+    if (!inChallenge) return false
+    const submitter = c.time_submitted_by_team_id
+    return submitter ? submitter === selectedTeamId : c.challenged_team_id === selectedTeamId
+  })
   const rescheduleWaiting    = challenges.filter(c =>
     (c.challenging_team_id === selectedTeamId || c.challenged_team_id === selectedTeamId) &&
     (c.status === 'reschedule_requested' || c.status === 'reschedule_pending_admin'))
   const submittedAwaiting    = challenges.filter(c => {
     const mr = c.match_result
-    if (!mr || c.status !== 'played') return false
+    if (!mr || c.status !== 'result_pending') return false
     return mr.reported_by_team_id === selectedTeamId && !mr.verified_at
   })
 
@@ -700,6 +779,38 @@ export default function DashboardPage() {
             {activeTeam.player1Name} &amp; {activeTeam.player2Name}
           </p>
         )}
+
+        {/* Active tickets */}
+        {activeTickets.length > 0 && (() => {
+          const TICKET_STYLE: Record<string, { label: string; cls: string; dot: string }> = {
+            tier:   { label: 'Tier Ticket',   cls: 'bg-violet-50 border-violet-200 text-violet-700 dark:bg-violet-500/10 dark:border-violet-500/30 dark:text-violet-300', dot: 'bg-violet-500' },
+            silver: { label: 'Silver Ticket', cls: 'bg-slate-100 border-slate-300 text-slate-600 dark:bg-slate-600/30 dark:border-slate-500/40 dark:text-slate-300', dot: 'bg-slate-400' },
+            gold:   { label: 'Gold Ticket',   cls: 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300', dot: 'bg-amber-400' },
+          }
+          return (
+            <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700/50">
+              <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2">
+                🎫 Available Tickets
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {activeTickets.map(t => {
+                  const s = TICKET_STYLE[t.ticket_type] ?? TICKET_STYLE.tier
+                  return (
+                    <Link key={t.id} href="/ladder">
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold cursor-pointer transition-opacity hover:opacity-80 ${s.cls}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+                        {s.label}
+                      </span>
+                    </Link>
+                  )
+                })}
+              </div>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">
+                Tap a ticket to go to the ladder and use it
+              </p>
+            </div>
+          )
+        })()}
       </DCard>
 
       {/* ── Frozen state banner ── */}
@@ -740,9 +851,8 @@ export default function DashboardPage() {
                       <StatusPill label="Challenge Received" color="orange" />
                       <CountdownPill deadline={c.accept_deadline} />
                     </div>
-                    <p className="text-base font-semibold text-slate-900 dark:text-white">
-                      from <span className="text-emerald-600 dark:text-emerald-400">{opponent(c).name}</span>
-                    </p>
+                    <p className="text-base font-semibold text-slate-900 dark:text-white">{matchup(c)}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">↓ They challenged you</p>
                     <OppContact c={c} />
                   </div>
                 </div>
@@ -781,9 +891,8 @@ export default function DashboardPage() {
                     <StatusPill label="Confirm Match Time" color="orange" />
                     <CountdownPill deadline={c.confirmation_deadline} />
                   </div>
-                  <p className="text-base font-semibold text-slate-900 dark:text-white">
-                    <span className="text-emerald-600 dark:text-emerald-400">{opponent(c).name}</span> set the match time
-                  </p>
+                  <p className="text-base font-semibold text-slate-900 dark:text-white">{matchup(c)}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{opponent(c).name} set the match time</p>
                   <OppContact c={c} />
                   {c.confirmed_time && (
                     <p className="text-sm font-medium text-slate-700 dark:text-slate-200 mt-1">
@@ -822,6 +931,7 @@ export default function DashboardPage() {
                     Dispute — time doesn't match
                   </Button>
                 </div>
+                <OpenChatBtn id={c.id} />
               </DCard>
             ))}
 
@@ -832,9 +942,7 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-2 flex-wrap mb-1.5">
                     <StatusPill label="Enter Agreed Time" color="yellow" />
                   </div>
-                  <p className="text-base font-semibold text-slate-900 dark:text-white">
-                    vs <span className="text-emerald-600 dark:text-emerald-400">{opponent(c).name}</span>
-                  </p>
+                  <p className="text-base font-semibold text-slate-900 dark:text-white">{matchup(c)}</p>
                   <OppContact c={c} />
                   <p className="text-sm text-slate-500 mt-1">
                     {c.challenging_team_id === selectedTeamId
@@ -853,6 +961,7 @@ export default function DashboardPage() {
                     <Calendar className="h-4 w-4" />Enter Match Time &amp; Venue
                   </Button>
                 </Link>
+                <OpenChatBtn id={c.id} />
               </DCard>
             ))}
 
@@ -864,9 +973,8 @@ export default function DashboardPage() {
                     <StatusPill label="Confirm Match Time" color="orange" />
                     <CountdownPill deadline={c.confirmation_deadline} />
                   </div>
-                  <p className="text-base font-semibold text-slate-900 dark:text-white">
-                    <span className="text-emerald-600 dark:text-emerald-400">{opponent(c).name}</span> proposed a time
-                  </p>
+                  <p className="text-base font-semibold text-slate-900 dark:text-white">{matchup(c)}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{opponent(c).name} proposed a time</p>
                   <OppContact c={c} />
                   {(c as any).reschedule_proposed_time && (
                     <p className="text-sm font-medium text-slate-700 dark:text-slate-200 mt-1">📅 {fmtDate((c as any).reschedule_proposed_time)}</p>
@@ -877,6 +985,7 @@ export default function DashboardPage() {
                     <Check className="h-4 w-4" />Review &amp; Confirm Time
                   </Button>
                 </Link>
+                <OpenChatBtn id={c.id} />
               </DCard>
             ))}
 
@@ -949,9 +1058,7 @@ export default function DashboardPage() {
                     <div className="flex items-center gap-2 mb-1.5">
                       <StatusPill label="Submit Result" color="yellow" />
                     </div>
-                    <p className="text-base font-semibold text-slate-900 dark:text-white">
-                      vs <span className="text-emerald-600 dark:text-emerald-400">{opponent(c).name}</span>
-                    </p>
+                    <p className="text-base font-semibold text-slate-900 dark:text-white">{matchup(c)}</p>
                     <OppContact c={c} />
                     {matchAt && <p className="text-sm text-slate-500 mt-0.5">{fmtDate(matchAt)}</p>}
                   </div>
@@ -1003,13 +1110,7 @@ export default function DashboardPage() {
                         </code>
                       </div>
 
-                      <p className="text-base font-semibold text-slate-900 dark:text-white">
-                        vs{' '}
-                        <Link href={`/teams/${opponent(c).id}`}
-                          className="text-emerald-700 dark:text-emerald-400 hover:underline underline-offset-2">
-                          {opponent(c).name}
-                        </Link>
-                      </p>
+                      <p className="text-lg font-bold text-slate-900 dark:text-white leading-tight">{matchup(c)}</p>
                       <OppContact c={c} />
 
                       {/* Opponent stats */}
@@ -1032,20 +1133,34 @@ export default function DashboardPage() {
                         </div>
                       )}
 
-                      {/* Date/time */}
+                      {/* Date/time/venue block */}
                       {matchAt ? (
-                        <div className="mt-2 space-y-0.5">
-                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                            📅 {new Date(matchAt).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-                          </p>
-                          <p className="text-sm text-slate-600 dark:text-slate-300">
-                            🕐 {new Date(matchAt).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })}
-                          </p>
+                        <div className="mt-3 inline-flex flex-col gap-1 bg-slate-50 dark:bg-slate-700/40 border border-slate-200 dark:border-slate-600/40 rounded-xl px-4 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">📅</span>
+                            <span className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                              {new Date(matchAt).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">🕐</span>
+                            <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                              {new Date(matchAt).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                            </span>
+                          </div>
+                          {locationLabel && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-base">📍</span>
+                              <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                                {locationLabel}{venueRaw?.address ? ` · ${venueRaw.address}` : ''}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <p className="text-sm text-slate-400 mt-1">Time not yet confirmed</p>
                       )}
-                      {locationLabel && (
+                      {!matchAt && locationLabel && (
                         <p className="text-sm text-slate-500 mt-0.5">📍 {locationLabel}{venueRaw?.address ? ` · ${venueRaw.address}` : ''}</p>
                       )}
                     </div>
@@ -1058,6 +1173,11 @@ export default function DashboardPage() {
                           <Flag className="h-3.5 w-3.5" />Score
                         </Button>
                       )}
+                      <Button size="sm" variant="outline" className="text-xs h-9 gap-1 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
+                        onClick={() => openChat(c.id)} disabled={chatLoading === c.id}>
+                        {chatLoading === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <MessageCircle className="h-3.5 w-3.5" />}
+                        Chat
+                      </Button>
                       <Link href={`/challenges/${c.id}`}>
                         <Button size="sm" variant="outline" className="text-xs h-9 w-full">Details</Button>
                       </Link>
@@ -1091,9 +1211,8 @@ export default function DashboardPage() {
                       <StatusPill label="Challenge Sent" color="blue" />
                       <CountdownPill deadline={c.accept_deadline} />
                     </div>
-                    <p className="text-base font-semibold text-slate-900 dark:text-white">
-                      to <span className="text-emerald-600 dark:text-emerald-400">{opponent(c).name}</span>
-                    </p>
+                    <p className="text-base font-semibold text-slate-900 dark:text-white">{matchup(c)}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">↑ You challenged</p>
                     <OppContact c={c} />
                     <p className="text-sm text-slate-500 mt-0.5">Waiting for them to respond</p>
                   </div>
@@ -1115,17 +1234,24 @@ export default function DashboardPage() {
                       <CountdownPill deadline={c.confirmation_deadline} />
                     </div>
                     <p className="text-base font-semibold text-slate-900 dark:text-white">
-                      vs <span className="text-emerald-600 dark:text-emerald-400">{opponent(c).name}</span>
+                      {matchup(c)}
                     </p>
                     <OppContact c={c} />
                     {c.confirmed_time && <p className="text-sm text-slate-500 mt-0.5">Time: {fmtDate(c.confirmed_time)}</p>}
                     <p className="text-xs text-slate-400 mt-0.5">Auto-confirms if they don't respond in time</p>
                   </div>
-                  <Link href={`/challenges/${c.id}`}>
-                    <button className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 flex items-center gap-0.5 shrink-0">
-                      View <ChevronRight className="h-3.5 w-3.5" />
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <Link href={`/challenges/${c.id}`}>
+                      <button className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 flex items-center gap-0.5">
+                        View <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </Link>
+                    <button onClick={() => openChat(c.id)} disabled={chatLoading === c.id}
+                      className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors">
+                      {chatLoading === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <MessageCircle className="h-3 w-3" />}
+                      Chat
                     </button>
-                  </Link>
+                  </div>
                 </div>
               </DCard>
             ))}
@@ -1139,16 +1265,23 @@ export default function DashboardPage() {
                       <CountdownPill deadline={c.confirmation_deadline} />
                     </div>
                     <p className="text-base font-semibold text-slate-900 dark:text-white">
-                      vs <span className="text-emerald-600 dark:text-emerald-400">{opponent(c).name}</span>
+                      {matchup(c)}
                     </p>
                     <OppContact c={c} />
                     <p className="text-sm text-slate-500 mt-0.5">You entered the time — waiting for them to confirm</p>
                   </div>
-                  <Link href={`/challenges/${c.id}`}>
-                    <button className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 flex items-center gap-0.5 shrink-0">
-                      View <ChevronRight className="h-3.5 w-3.5" />
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <Link href={`/challenges/${c.id}`}>
+                      <button className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 flex items-center gap-0.5">
+                        View <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </Link>
+                    <button onClick={() => openChat(c.id)} disabled={chatLoading === c.id}
+                      className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors">
+                      {chatLoading === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <MessageCircle className="h-3 w-3" />}
+                      Chat
                     </button>
-                  </Link>
+                  </div>
                 </div>
               </DCard>
             ))}
@@ -1161,7 +1294,7 @@ export default function DashboardPage() {
                       <StatusPill label={c.status === 'reschedule_pending_admin' ? 'Admin Review' : 'Reschedule Requested'} color="purple" />
                     </div>
                     <p className="text-base font-semibold text-slate-900 dark:text-white">
-                      vs <span className="text-emerald-600 dark:text-emerald-400">{opponent(c).name}</span>
+                      {matchup(c)}
                     </p>
                     <OppContact c={c} />
                     <p className="text-sm text-slate-500 mt-0.5">
@@ -1170,11 +1303,18 @@ export default function DashboardPage() {
                         : 'A reschedule has been requested'}
                     </p>
                   </div>
-                  <Link href={`/challenges/${c.id}`}>
-                    <button className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 flex items-center gap-0.5 shrink-0">
-                      View <ChevronRight className="h-3.5 w-3.5" />
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <Link href={`/challenges/${c.id}`}>
+                      <button className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 flex items-center gap-0.5">
+                        View <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </Link>
+                    <button onClick={() => openChat(c.id)} disabled={chatLoading === c.id}
+                      className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors">
+                      {chatLoading === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <MessageCircle className="h-3 w-3" />}
+                      Chat
                     </button>
-                  </Link>
+                  </div>
                 </div>
               </DCard>
             ))}
@@ -1188,16 +1328,27 @@ export default function DashboardPage() {
                       <CountdownPill deadline={c.match_result?.verify_deadline} />
                     </div>
                     <p className="text-base font-semibold text-slate-900 dark:text-white">
-                      vs <span className="text-emerald-600 dark:text-emerald-400">{opponent(c).name}</span>
+                      {matchup(c)}
                     </p>
                     <OppContact c={c} />
-                    <p className="text-sm text-slate-500 mt-0.5">Waiting for them to verify — auto-approves when timer expires</p>
+                    <p className="text-sm text-slate-500 mt-0.5">
+                      {c.match_result?.verify_deadline && new Date(c.match_result.verify_deadline) < new Date()
+                        ? 'Timer expired — auto-approval running shortly'
+                        : 'Waiting for them to verify — auto-approves when timer expires'}
+                    </p>
                   </div>
-                  <Link href={`/challenges/${c.id}`}>
-                    <button className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 flex items-center gap-0.5 shrink-0">
-                      View <ChevronRight className="h-3.5 w-3.5" />
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <Link href={`/challenges/${c.id}`}>
+                      <button className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 flex items-center gap-0.5">
+                        View <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </Link>
+                    <button onClick={() => openChat(c.id)} disabled={chatLoading === c.id}
+                      className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors">
+                      {chatLoading === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <MessageCircle className="h-3 w-3" />}
+                      Chat
                     </button>
-                  </Link>
+                  </div>
                 </div>
               </DCard>
             ))}

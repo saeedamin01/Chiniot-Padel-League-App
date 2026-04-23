@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useMemo, useRef } from 'react'
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
@@ -28,6 +28,7 @@ interface TeamChallengeInfo {
   opponentName: string
   opponentRank: number | null
   challengeId: string
+  confirmedTime?: string | null
 }
 
 interface TeamStats {
@@ -112,16 +113,19 @@ const DEFAULT_TIER_STYLE = {
 
 // ─── Challenge status helpers ─────────────────────────────────────────────────
 
+const ARRANGING_STATUSES = ['accepted', 'accepted_open', 'time_pending_confirm', 'reschedule_requested', 'reschedule_pending_admin']
+
+// ── Expanded-panel helpers (detailed) ────────────────────────────────────────
+
 function challengeStatusLabel(ci: TeamChallengeInfo): string {
-  if (ci.status === 'result_pending') return 'Result pending'
-  if (ci.type === 'sent') {
-    if (ci.status === 'scheduled') return 'Match scheduled ↑'
-    if (ci.status === 'accepted')  return 'Time confirmed ↑'
-    return 'Challenge sent ↑'
+  if (ci.status === 'result_pending') {
+    const vs = ci.opponentName ? ` vs ${ci.opponentName}` : ''
+    return `Result pending${vs}`
   }
-  if (ci.status === 'scheduled') return 'Match scheduled ↓'
-  if (ci.status === 'accepted')  return 'Time confirmed ↓'
-  return 'Challenged from below ↓'
+  const dir = ci.type === 'sent' ? '↑' : '↓'
+  if (ci.status === 'scheduled') return `Match scheduled ${dir}`
+  if (ARRANGING_STATUSES.includes(ci.status as string)) return `Arranging time ${dir}`
+  return ci.type === 'sent' ? `Challenge sent ${dir}` : `Incoming challenge ${dir}`
 }
 
 function challengeStatusColors(ci: TeamChallengeInfo): string {
@@ -129,19 +133,53 @@ function challengeStatusColors(ci: TeamChallengeInfo): string {
     return 'bg-green-100 text-green-700 border-green-200 dark:bg-green-500/15 dark:text-green-400 dark:border-green-500/25'
   if (ci.status === 'scheduled')
     return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-400 dark:border-blue-500/25'
-  if (ci.status === 'accepted')
+  if (ARRANGING_STATUSES.includes(ci.status as string))
     return 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-500/15 dark:text-orange-400 dark:border-orange-500/25'
   if (ci.type === 'sent')
-    return 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-400/15 dark:text-yellow-500 dark:border-yellow-400/30'
-  return 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-500/15 dark:text-purple-400 dark:border-purple-500/25'
+    return 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-400/15 dark:text-yellow-600 dark:border-yellow-400/30'
+  return 'bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-500/15 dark:text-violet-400 dark:border-violet-500/25'
 }
 
 function challengeStatusIcon(ci: TeamChallengeInfo) {
   if (ci.status === 'result_pending') return <CheckCircle className="h-3 w-3 shrink-0" />
   if (ci.status === 'scheduled')      return <Calendar    className="h-3 w-3 shrink-0" />
-  if (ci.status === 'accepted')       return <Clock       className="h-3 w-3 shrink-0" />
+  if (ARRANGING_STATUSES.includes(ci.status as string)) return <Clock className="h-3 w-3 shrink-0" />
   if (ci.type === 'sent')             return <Zap         className="h-3 w-3 shrink-0" />
   return <AlertCircle className="h-3 w-3 shrink-0" />
+}
+
+// ── Inline row badge helpers (compact) ───────────────────────────────────────
+
+function challengeInlineLabel(ci: TeamChallengeInfo): string {
+  if (ci.status === 'result_pending') {
+    const vs = ci.opponentName ? ` · ${ci.opponentName}` : ''
+    return `Result due${vs}`
+  }
+  const dir = ci.type === 'sent' ? '↑' : '↓'
+  const vs  = ci.opponentName ? ` · ${ci.opponentName}` : ''
+  if (ci.status === 'scheduled') return `${dir} Scheduled${vs}`
+  if (ARRANGING_STATUSES.includes(ci.status as string)) return `${dir} Arranging${vs}`
+  return ci.type === 'sent' ? `${dir} Challenged${vs}` : `${dir} Incoming${vs}`
+}
+
+function challengeInlineColors(ci: TeamChallengeInfo): string {
+  if (ci.status === 'result_pending')
+    return 'bg-green-50 text-green-700 border-green-200 dark:bg-green-500/15 dark:text-green-400 dark:border-green-500/25'
+  if (ci.status === 'scheduled')
+    return 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-400 dark:border-blue-500/25'
+  if (ARRANGING_STATUSES.includes(ci.status as string))
+    return 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/15 dark:text-orange-400 dark:border-orange-500/25'
+  if (ci.type === 'sent')
+    return 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-400/15 dark:text-yellow-600 dark:border-yellow-400/30'
+  return 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/15 dark:text-violet-400 dark:border-violet-500/25'
+}
+
+function challengeInlineIcon(ci: TeamChallengeInfo) {
+  if (ci.status === 'result_pending') return <CheckCircle className="h-2.5 w-2.5 shrink-0" />
+  if (ci.status === 'scheduled')      return <Calendar    className="h-2.5 w-2.5 shrink-0" />
+  if (ARRANGING_STATUSES.includes(ci.status as string)) return <Clock className="h-2.5 w-2.5 shrink-0" />
+  if (ci.type === 'sent')             return <Zap         className="h-2.5 w-2.5 shrink-0" />
+  return <AlertCircle className="h-2.5 w-2.5 shrink-0" />
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
@@ -174,10 +212,9 @@ export default function LadderPage() {
     })
   }
 
-  // ─── Data fetch (unchanged from original) ─────────────────────────────────
+  // ─── Data fetch ────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    const fetchLadder = async () => {
+  const fetchLadder = useCallback(async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) { toast.error('Authentication required'); return }
@@ -222,13 +259,14 @@ export default function LadderPage() {
                 .from('match_results')
                 .select('id, winner_team_id, loser_team_id, created_at, challenge:challenges!challenge_id(challenging_team_id, challenged_team_id)')
                 .eq('season_id', season.id)
+                .not('verified_at', 'is', null)
                 .order('created_at', { ascending: false })
             : Promise.resolve({ data: [] }),
           allTeamIds.length > 0
             ? supabase
                 .from('challenges')
-                .select('id, challenging_team_id, challenged_team_id, status')
-                .in('status', ['pending', 'accepted', 'accepted_open', 'time_pending_confirm', 'reschedule_requested', 'reschedule_pending_admin', 'scheduled'])
+                .select('id, challenging_team_id, challenged_team_id, status, confirmed_time, accepted_slot, match_date')
+                .in('status', ['pending', 'accepted', 'accepted_open', 'time_pending_confirm', 'reschedule_requested', 'reschedule_pending_admin', 'scheduled', 'result_pending'])
                 .or(allTeamIds.map(id => `challenging_team_id.eq.${id},challenged_team_id.eq.${id}`).join(','))
             : Promise.resolve({ data: [] }),
           supabase
@@ -272,10 +310,11 @@ export default function LadderPage() {
           const challengingName = teamNameMap.get(c.challenging_team_id) ?? 'Unknown'
           const challengedName  = teamNameMap.get(c.challenged_team_id)  ?? 'Unknown'
           const status: TeamChallengeInfo['status'] = c.status
+          const confirmedTime: string | null = c.confirmed_time ?? c.accepted_slot ?? c.match_date ?? null
           if (!challengeMap.has(c.challenging_team_id)) challengeMap.set(c.challenging_team_id, [])
-          challengeMap.get(c.challenging_team_id)!.push({ type: 'sent', status, opponentName: challengedName, opponentRank: teamRankMap.get(c.challenged_team_id) ?? null, challengeId: c.id })
+          challengeMap.get(c.challenging_team_id)!.push({ type: 'sent', status, opponentName: challengedName, opponentRank: teamRankMap.get(c.challenged_team_id) ?? null, challengeId: c.id, confirmedTime })
           if (!challengeMap.has(c.challenged_team_id)) challengeMap.set(c.challenged_team_id, [])
-          challengeMap.get(c.challenged_team_id)!.push({ type: 'received', status, opponentName: challengingName, opponentRank: teamRankMap.get(c.challenging_team_id) ?? null, challengeId: c.id })
+          challengeMap.get(c.challenged_team_id)!.push({ type: 'received', status, opponentName: challengingName, opponentRank: teamRankMap.get(c.challenging_team_id) ?? null, challengeId: c.id, confirmedTime })
         }
         for (const mr of (unverifiedRes.data || [])) {
           const c = Array.isArray(mr.challenge) ? mr.challenge[0] : mr.challenge
@@ -285,7 +324,8 @@ export default function LadderPage() {
             if (!challengeMap.has(tid)) challengeMap.set(tid, [])
             const existing = challengeMap.get(tid)!
             if (!existing.some(e => e.challengeId === c.id)) {
-              existing.push({ type: 'sent', status: 'result_pending', opponentName: '', opponentRank: null, challengeId: c.id })
+              const opponentId = tid === c.challenging_team_id ? c.challenged_team_id : c.challenging_team_id
+              existing.push({ type: 'sent', status: 'result_pending', opponentName: teamNameMap.get(opponentId) ?? '', opponentRank: teamRankMap.get(opponentId) ?? null, challengeId: c.id })
             }
           }
         }
@@ -391,10 +431,31 @@ export default function LadderPage() {
       } finally {
         setLoading(false)
       }
-    }
-
-    fetchLadder()
   }, [supabase, activeTeam?.id])
+
+  // Initial fetch
+  useEffect(() => {
+    fetchLadder()
+  }, [fetchLadder])
+
+  // Re-fetch whenever any challenge status changes (e.g. cron auto-verifies a result)
+  useEffect(() => {
+    const channel = supabase
+      .channel('ladder-challenge-updates')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'challenges' },
+        () => { fetchLadder() }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'match_results' },
+        () => { fetchLadder() }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [supabase, fetchLadder])
 
   // ─── Filtered sections ─────────────────────────────────────────────────────
 
@@ -565,17 +626,16 @@ export default function LadderPage() {
                                 <Snowflake className="h-2.5 w-2.5" />Frozen
                               </span>
                             )}
-                            {/* Busy badge — only when team has challenges */}
-                            {hasChal && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-700/50 dark:text-slate-400 dark:border-slate-600/50 shrink-0">
-                                Busy
-                                {pos.challenges.length > 1 && (
-                                  <span className="inline-flex items-center justify-center h-3.5 w-3.5 rounded-full bg-slate-500/20 dark:bg-slate-600 text-[9px] font-bold">
-                                    {pos.challenges.length}
-                                  </span>
-                                )}
+                            {/* Per-challenge inline status chips */}
+                            {pos.challenges.map((ci, idx) => (
+                              <span
+                                key={idx}
+                                className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 ${challengeInlineColors(ci)}`}
+                              >
+                                {challengeInlineIcon(ci)}
+                                {challengeInlineLabel(ci)}
                               </span>
-                            )}
+                            ))}
                           </div>
 
                           {/* Player names + W/L */}
@@ -640,32 +700,39 @@ export default function LadderPage() {
                       {isExpanded && (
                         <div className="px-4 pb-4 pt-1 space-y-3 border-t border-slate-100 dark:border-slate-700/40">
 
-                          {/* Challenge details */}
+                          {/* Challenge details (expanded) */}
                           {hasChal && (
                             <div className="space-y-2">
-                              <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Active Challenges</p>
+                              <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                                Active Challenge{pos.challenges.length > 1 ? 's' : ''}
+                              </p>
                               {pos.challenges.map((ci, idx) => (
-                                <div key={idx} className="flex items-center gap-2 flex-wrap">
-                                  {/* Status pill */}
-                                  <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border ${challengeStatusColors(ci)}`}>
-                                    {challengeStatusIcon(ci)}
-                                    {challengeStatusLabel(ci)}
-                                  </span>
-                                  {/* Opponent context */}
-                                  {ci.opponentName && ci.status !== 'result_pending' && (
-                                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                                      vs <span className="font-semibold text-slate-700 dark:text-slate-300">{ci.opponentName}</span>
-                                      {ci.opponentRank != null && (
-                                        <span className={`ml-1 font-semibold text-xs ${ci.type === 'sent' ? 'text-yellow-600 dark:text-yellow-500' : 'text-purple-600 dark:text-purple-400'}`}>
-                                          #{ci.opponentRank} {ci.type === 'sent' ? 'above' : 'below'}
+                                <div key={idx} className={`flex items-center gap-2 rounded-lg px-2.5 py-2 border ${challengeStatusColors(ci)}`}>
+                                  {challengeStatusIcon(ci)}
+                                  <div className="flex-1 min-w-0">
+                                    <span className="text-[11px] font-bold">{challengeStatusLabel(ci)}</span>
+                                    {ci.opponentName && ci.status !== 'result_pending' && (
+                                      <span className="text-[11px] ml-1.5 opacity-80">
+                                        vs {ci.opponentName}
+                                        {ci.opponentRank != null && (
+                                          <span className="ml-1 font-semibold">#{ci.opponentRank}</span>
+                                        )}
+                                      </span>
+                                    )}
+                                    {ci.status === 'scheduled' && ci.confirmedTime && (() => {
+                                      const d = new Date(ci.confirmedTime)
+                                      const date = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+                                      const time = d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
+                                      return (
+                                        <span className="block text-[11px] mt-0.5 opacity-70">
+                                          📅 {date} · {time}
                                         </span>
-                                      )}
-                                    </span>
-                                  )}
-                                  {/* View link */}
+                                      )
+                                    })()}
+                                  </div>
                                   <Link
                                     href={`/challenges/${ci.challengeId}`}
-                                    className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline underline-offset-2 ml-auto"
+                                    className="text-[11px] font-bold hover:underline underline-offset-2 shrink-0 opacity-80 hover:opacity-100"
                                   >
                                     View →
                                   </Link>

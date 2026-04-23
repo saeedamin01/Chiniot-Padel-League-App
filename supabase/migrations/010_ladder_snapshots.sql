@@ -21,7 +21,7 @@ create policy "Admins can manage ladder snapshots"
     exists (
       select 1 from players
       where players.id = auth.uid()
-      and players.role = 'admin'
+      and players.is_admin = true
     )
   );
 

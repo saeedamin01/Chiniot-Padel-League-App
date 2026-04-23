@@ -9,6 +9,7 @@ export type ChallengeStatus =
   | 'reschedule_requested'
   | 'reschedule_pending_admin'
   | 'scheduled'
+  | 'result_pending'
   | 'played'
   | 'forfeited'
   | 'dissolved'
@@ -84,6 +85,7 @@ export interface Venue {
   address?: string
   notes?: string
   is_active: boolean
+  is_partner: boolean
   created_at: string
   updated_at: string
 }
@@ -185,6 +187,8 @@ export interface Challenge {
   accepted_at?: string
   scheduled_at?: string
   dissolved_reason?: string | null
+  // Migration 016: tracks who entered the agreed time so the correct other team confirms
+  time_submitted_by_team_id?: string | null
   created_at: string
   updated_at: string
   // Joined

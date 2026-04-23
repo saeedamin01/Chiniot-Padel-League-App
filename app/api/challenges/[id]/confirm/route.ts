@@ -7,16 +7,21 @@ export const dynamic = 'force-dynamic'
 
 // POST /api/challenges/[id]/confirm
 //
-// Called by the CHALLENGING team after the challenged team sets the time/venue.
+// Confirms or disputes an awaiting-confirmation challenge.
 // Body: { action: 'confirm' | 'dispute' }
 //
-// confirm  → moves to 'scheduled'. Match is officially on the books.
-// dispute  → moves back to 'pending' so the challenged team can re-enter the time.
-//            Use this if the time entered doesn't match what was agreed offline.
+// STATUS: accepted (slot chosen by challenged team)
+//   → Challenging team confirms/disputes — they are always the confirmer here.
 //
-// Auto-confirm: if the challenger doesn't respond before confirmation_deadline,
-// any page load that reads the challenge should call checkAndAutoConfirm() which
-// will move it to 'scheduled' automatically.
+// STATUS: time_pending_confirm (time entered via set-time)
+//   → The team that did NOT submit the time must confirm.
+//     challenge.time_submitted_by_team_id records who submitted.
+//     Exception: if confirmation_deadline has passed, any team member triggers
+//     auto-confirm (fire-and-forget from the client on page load).
+//
+// confirm  → moves to 'scheduled'. Match is officially on the books.
+// dispute  → for time_pending_confirm → reverts to 'accepted_open' (re-enter time)
+//            for accepted             → reverts to 'pending' (re-accept entirely)
 
 export async function POST(
   request: NextRequest,
@@ -53,21 +58,53 @@ export async function POST(
       return NextResponse.json({ error: 'Challenge is not awaiting confirmation' }, { status: 400 })
     }
 
-    // Verify user is on challenging team
-    const { data: challengingTeam } = await adminClient
-      .from('teams')
-      .select('*')
-      .eq('id', challenge.challenging_team_id)
-      .single()
+    // Fetch both teams — needed to determine who the user is and who should confirm
+    const [{ data: challengingTeam }, { data: challengedTeam }] = await Promise.all([
+      adminClient.from('teams').select('*').eq('id', challenge.challenging_team_id).single(),
+      adminClient.from('teams').select('*').eq('id', challenge.challenged_team_id).single(),
+    ])
 
-    if (
-      !challengingTeam ||
-      (challengingTeam.player1_id !== user.id && challengingTeam.player2_id !== user.id)
-    ) {
+    const isOnChallengingTeam = !!(challengingTeam &&
+      (challengingTeam.player1_id === user.id || challengingTeam.player2_id === user.id))
+    const isOnChallengedTeam = !!(challengedTeam &&
+      (challengedTeam.player1_id === user.id || challengedTeam.player2_id === user.id))
+
+    if (!isOnChallengingTeam && !isOnChallengedTeam) {
       return NextResponse.json({ error: 'Not authorized to confirm this challenge' }, { status: 403 })
     }
 
     const now = new Date()
+
+    // ── Determine if the current user is allowed to confirm ─────────────────
+    if (challenge.status === 'accepted') {
+      // Slot was chosen by challenged team → only challenger confirms
+      if (!isOnChallengingTeam) {
+        return NextResponse.json({ error: 'Only the challenging team can confirm a slot selection' }, { status: 403 })
+      }
+    } else if (challenge.status === 'time_pending_confirm') {
+      // Time was entered via set-time → the OTHER team from the submitter confirms.
+      // Exception: if the confirmation window has expired, allow any team member to
+      // trigger the auto-confirm (fired as a fire-and-forget from the client page load).
+      const deadlineExpired = challenge.confirmation_deadline &&
+        new Date(challenge.confirmation_deadline) <= now
+
+      if (!deadlineExpired && challenge.time_submitted_by_team_id) {
+        const userIsSubmitter =
+          (isOnChallengingTeam && challenge.time_submitted_by_team_id === challenge.challenging_team_id) ||
+          (isOnChallengedTeam  && challenge.time_submitted_by_team_id === challenge.challenged_team_id)
+
+        if (userIsSubmitter) {
+          return NextResponse.json(
+            { error: 'You entered this time — the other team needs to confirm it' },
+            { status: 403 }
+          )
+        }
+      }
+    }
+
+    // The team doing the confirming, and the team to notify
+    const confirmingTeam = isOnChallengingTeam ? challengingTeam : challengedTeam
+    const notifyTeam     = isOnChallengingTeam ? challengedTeam  : challengingTeam
 
     if (action === 'confirm') {
       // Move to scheduled — match is officially on the books
@@ -86,13 +123,6 @@ export async function POST(
         return NextResponse.json({ error: updateError.message }, { status: 500 })
       }
 
-      // Notify challenged team
-      const { data: challengedTeamData } = await adminClient
-        .from('teams')
-        .select('player1_id, player2_id')
-        .eq('id', challenge.challenged_team_id)
-        .single()
-
       const formattedTime = challenge.confirmed_time
         ? new Date(challenge.confirmed_time).toLocaleString('en-GB', {
             weekday: 'short', day: 'numeric', month: 'short',
@@ -100,24 +130,25 @@ export async function POST(
           })
         : 'the agreed time'
 
-      if (challengedTeamData) {
+      // Notify the other team
+      if (notifyTeam) {
         await adminClient.from('notifications').insert([
           {
-            player_id: challengedTeamData.player1_id,
-            team_id: challenge.challenged_team_id,
+            player_id: notifyTeam.player1_id,
+            team_id: notifyTeam.id,
             type: 'challenge_scheduled',
             title: 'Match Confirmed',
-            message: `${challengingTeam.name} confirmed the match for ${formattedTime}. Good luck!`,
+            message: `${confirmingTeam?.name ?? 'Opponent'} confirmed the match for ${formattedTime}. Good luck!`,
             action_url: `/challenges/${params.id}`,
             is_read: false,
             email_sent: false,
           },
           {
-            player_id: challengedTeamData.player2_id,
-            team_id: challenge.challenged_team_id,
+            player_id: notifyTeam.player2_id,
+            team_id: notifyTeam.id,
             type: 'challenge_scheduled',
             title: 'Match Confirmed',
-            message: `${challengingTeam.name} confirmed the match for ${formattedTime}. Good luck!`,
+            message: `${confirmingTeam?.name ?? 'Opponent'} confirmed the match for ${formattedTime}. Good luck!`,
             action_url: `/challenges/${params.id}`,
             is_read: false,
             email_sent: false,
@@ -140,7 +171,7 @@ export async function POST(
         eventType: 'time_confirmed',
         actorId: user.id,
         actorRole: 'player',
-        actorName: challengingTeam.name,
+        actorName: confirmingTeam?.name ?? 'Unknown',
         data: { confirmed_time: challenge.confirmed_time },
       })
 
@@ -148,8 +179,8 @@ export async function POST(
 
     } else {
       // Dispute:
-      // - 'accepted' (slot chosen)       → back to 'pending' (Team B re-accepts entirely)
-      // - 'time_pending_confirm'          → back to 'accepted_open' (Team B re-enters a time)
+      // - 'accepted' (slot chosen)       → back to 'pending' (re-accept entirely)
+      // - 'time_pending_confirm'          → back to 'accepted_open' (re-enter time)
       const revertStatus = challenge.status === 'time_pending_confirm' ? 'accepted_open' : 'pending'
 
       const { data: updated, error: updateError } = await adminClient
@@ -160,6 +191,7 @@ export async function POST(
           accepted_slot: revertStatus === 'pending' ? null : challenge.accepted_slot,
           venue_id: null,
           confirmation_deadline: null,
+          time_submitted_by_team_id: null,
           ...(revertStatus === 'pending' ? { accepted_at: null } : {}),
         })
         .eq('id', params.id)
@@ -170,35 +202,33 @@ export async function POST(
         return NextResponse.json({ error: updateError.message }, { status: 500 })
       }
 
-      // Notify challenged team to re-enter the time
-      const { data: challengedTeamData } = await adminClient
-        .from('teams')
-        .select('player1_id, player2_id')
-        .eq('id', challenge.challenged_team_id)
-        .single()
+      // Notify the submitting team (the one whose time was disputed) to re-enter
+      // For 'accepted', that's always the challenged team; for 'time_pending_confirm'
+      // it's whoever submitted (tracked by time_submitted_by_team_id, or fall back to notifyTeam).
+      const reNotifyTeam = challenge.status === 'time_pending_confirm' ? notifyTeam : challengedTeam
 
-      if (challengedTeamData) {
+      if (reNotifyTeam) {
+        const disputeMsg = challenge.status === 'time_pending_confirm'
+          ? `${confirmingTeam?.name ?? 'Opponent'} disputed the time you entered. Please coordinate again and re-enter the agreed time.`
+          : `${confirmingTeam?.name ?? 'Opponent'} disputed the slot. Please accept the challenge again with a new agreed time.`
+
         await adminClient.from('notifications').insert([
           {
-            player_id: challengedTeamData.player1_id,
-            team_id: challenge.challenged_team_id,
+            player_id: reNotifyTeam.player1_id,
+            team_id: reNotifyTeam.id,
             type: 'challenge_disputed',
             title: 'Match Time Disputed',
-            message: challenge.status === 'time_pending_confirm'
-                ? `${challengingTeam.name} disputed the time you entered. Please coordinate again and enter the new agreed time.`
-                : `${challengingTeam.name} disputed the slot. Please accept the challenge again with a new agreed time.`,
+            message: disputeMsg,
             action_url: `/challenges/${params.id}`,
             is_read: false,
             email_sent: false,
           },
           {
-            player_id: challengedTeamData.player2_id,
-            team_id: challenge.challenged_team_id,
+            player_id: reNotifyTeam.player2_id,
+            team_id: reNotifyTeam.id,
             type: 'challenge_disputed',
             title: 'Match Time Disputed',
-            message: challenge.status === 'time_pending_confirm'
-                ? `${challengingTeam.name} disputed the time you entered. Please coordinate again and enter the new agreed time.`
-                : `${challengingTeam.name} disputed the slot. Please accept the challenge again with a new agreed time.`,
+            message: disputeMsg,
             action_url: `/challenges/${params.id}`,
             is_read: false,
             email_sent: false,
@@ -212,7 +242,7 @@ export async function POST(
         action_type: 'challenge_disputed',
         entity_type: 'challenge',
         entity_id: params.id,
-        new_value: { status: 'pending' },
+        new_value: { status: revertStatus },
         created_at: now.toISOString(),
       })
 
@@ -221,7 +251,7 @@ export async function POST(
         eventType: 'time_disputed',
         actorId: user.id,
         actorRole: 'player',
-        actorName: challengingTeam.name,
+        actorName: confirmingTeam?.name ?? 'Unknown',
         data: { reverted_to: revertStatus },
       })
 

@@ -276,21 +276,30 @@ export async function POST(
     }
 
     // ── Auto-create chat room for this challenge ──────────────────────────────
-    // Collect all 4 player IDs from both teams
-    if (challengingTeamData) {
-      const allPlayerIds = [
-        challengedTeam.player1_id,
-        challengedTeam.player2_id,
-        challengingTeamData.player1_id,
-        challengingTeamData.player2_id,
-      ].filter(Boolean) as string[]
+    // Non-fatal: if the chat table doesn't exist yet (migration pending) or
+    // the upsert fails for any reason, we still return a successful acceptance.
+    try {
+      if (challengingTeamData) {
+        const allPlayerIds = [
+          challengedTeam.player1_id,
+          challengedTeam.player2_id,
+          challengingTeamData.player1_id,
+          challengingTeamData.player2_id,
+        ].filter(Boolean) as string[]
 
-      await adminClient
-        .from('challenge_chats')
-        .upsert(
-          { challenge_id: params.id, allowed_player_ids: allPlayerIds },
-          { onConflict: 'challenge_id', ignoreDuplicates: true }
-        )
+        const { error: chatErr } = await adminClient
+          .from('challenge_chats')
+          .upsert(
+            { challenge_id: params.id, allowed_player_ids: allPlayerIds },
+            { onConflict: 'challenge_id', ignoreDuplicates: true }
+          )
+
+        if (chatErr) {
+          console.error('[Chat] Failed to create chat room on accept:', chatErr)
+        }
+      }
+    } catch (chatErr) {
+      console.error('[Chat] Unexpected error creating chat room:', chatErr)
     }
 
     // Audit log

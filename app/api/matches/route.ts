@@ -109,11 +109,11 @@ export async function POST(request: NextRequest) {
 
   if (resultErr) return NextResponse.json({ error: resultErr.message }, { status: 500 })
 
-  // Update challenge status to 'played', and override venue if the teams played elsewhere
+  // Update challenge to result_pending — teams stay locked until the score is verified
   await adminClient
     .from('challenges')
     .update({
-      status: 'played',
+      status: 'result_pending',
       ...(venueId ? { venue_id: venueId } : {}),
     })
     .eq('id', challengeId)

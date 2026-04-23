@@ -73,7 +73,7 @@ export async function PATCH(
     const VALID_STATUSES = [
       'pending', 'accepted', 'accepted_open', 'time_pending_confirm',
       'reschedule_requested', 'reschedule_pending_admin', 'revision_proposed',
-      'scheduled', 'played', 'forfeited', 'dissolved',
+      'scheduled', 'result_pending', 'played', 'forfeited', 'dissolved',
     ]
     if (body.status && !VALID_STATUSES.includes(body.status)) {
       return NextResponse.json({ error: `Invalid status: ${body.status}` }, { status: 400 })

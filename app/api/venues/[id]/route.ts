@@ -27,13 +27,14 @@ export async function PATCH(
     }
 
     const body = await request.json()
-    const { name, address, notes, is_active } = body
+    const { name, address, notes, is_active, is_partner } = body
 
     const updates: Record<string, unknown> = {}
     if (name !== undefined) updates.name = name.trim()
     if (address !== undefined) updates.address = address
     if (notes !== undefined) updates.notes = notes
     if (is_active !== undefined) updates.is_active = is_active
+    if (is_partner !== undefined) updates.is_partner = is_partner
 
     const adminClient = createAdminClient()
     const { data, error } = await adminClient

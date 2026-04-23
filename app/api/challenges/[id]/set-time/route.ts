@@ -113,6 +113,7 @@ export async function POST(
         confirmed_time: confirmedDate.toISOString(),
         venue_id: venueId,
         confirmation_deadline: addHours(now, confirmationWindowHours).toISOString(),
+        time_submitted_by_team_id: submittingTeam.id,
       })
       .eq('id', params.id)
       .select()

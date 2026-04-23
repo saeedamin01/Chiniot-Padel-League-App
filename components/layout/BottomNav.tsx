@@ -63,7 +63,7 @@ export function BottomNav() {
   const tabs = [
     { href: '/dashboard',  label: 'Home',       icon: LayoutDashboard, badge: 0 },
     { href: '/ladder',     label: 'Ladder',     icon: Trophy,          badge: 0 },
-    { href: '/challenges', label: 'Challenges', icon: Swords,          badge: 0 },
+    { href: '/challenges', label: 'My Challenges', icon: Swords,          badge: 0 },
     { href: '/chat',       label: 'Chat',       icon: MessageCircle,   badge: totalUnread },
     { href: '/league',     label: 'League',     icon: Globe,           badge: 0 },
   ]
@@ -216,7 +216,7 @@ export function BottomNav() {
                     </span>
                   )}
                 </div>
-                <span className="text-[10px] font-medium tracking-wide">
+                <span className={`font-medium ${label.length > 10 ? 'text-[9px] tracking-normal' : 'text-[10px] tracking-wide'}`}>
                   {label}
                 </span>
               </Link>

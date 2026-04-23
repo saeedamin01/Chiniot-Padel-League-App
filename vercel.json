@@ -1,8 +1,9 @@
 {
+  "_note": "This file is NOT used in production (deployed on Hetzner). Cron jobs are managed via crontab on the Hetzner server. See scripts/cron-runner.sh for setup instructions.",
   "crons": [
     {
       "path": "/api/cron/challenge-forfeit",
-      "schedule": "*/15 * * * *"
+      "schedule": "* * * * *"
     },
     {
       "path": "/api/cron/freeze-drops",
@@ -14,7 +15,11 @@
     },
     {
       "path": "/api/cron/result-verify",
-      "schedule": "*/15 * * * *"
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/time-confirm",
+      "schedule": "* * * * *"
     }
   ]
 }

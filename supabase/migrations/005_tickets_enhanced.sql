@@ -40,7 +40,7 @@ UPDATE tickets SET status = 'used' WHERE is_used = TRUE AND status = 'active';
 
 CREATE OR REPLACE TRIGGER tickets_updated_at
   BEFORE UPDATE ON tickets
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ── 3. Enable RLS ─────────────────────────────────────────────────────────────
 

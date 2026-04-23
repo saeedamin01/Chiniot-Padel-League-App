@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { seasonId, name, address, notes } = body
+    const { seasonId, name, address, notes, is_partner } = body
 
     if (!seasonId || !name?.trim()) {
       return NextResponse.json({ error: 'seasonId and name are required' }, { status: 400 })
@@ -56,7 +56,14 @@ export async function POST(request: NextRequest) {
     const adminClient = createAdminClient()
     const { data, error } = await adminClient
       .from('venues')
-      .insert({ season_id: seasonId, name: name.trim(), address, notes, is_active: true })
+      .insert({
+        season_id: seasonId,
+        name: name.trim(),
+        address,
+        notes,
+        is_active: true,
+        is_partner: is_partner === true,
+      })
       .select()
       .single()
 

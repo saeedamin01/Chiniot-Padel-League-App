@@ -79,6 +79,11 @@ export function SendChallengeModal({
     })
     if (filledSlots.length === 0) {
       newErrors.timeSlots = 'Please offer at least one time slot'
+    } else {
+      const values = filledSlots.map(s => s.dateTime)
+      if (new Set(values).size < values.length) {
+        newErrors.timeSlots = 'Each slot must be a different date/time — remove the duplicate'
+      }
     }
 
     setErrors(newErrors)
@@ -116,14 +121,23 @@ export function SendChallengeModal({
   }
 
   const handleSlotChange = (id: string, value: string) => {
-    setTimeSlots(
-      timeSlots.map((slot) =>
-        slot.id === id ? { ...slot, dateTime: value } : slot
-      )
+    const updated = timeSlots.map((slot) =>
+      slot.id === id ? { ...slot, dateTime: value } : slot
     )
-    if (errors.timeSlots) {
-      setErrors({ ...errors, timeSlots: '' })
+    setTimeSlots(updated)
+
+    // Instant duplicate feedback
+    if (value.trim()) {
+      const otherValues = updated
+        .filter(s => s.id !== id && s.dateTime.trim() !== '')
+        .map(s => s.dateTime)
+      if (otherValues.includes(value)) {
+        setErrors(e => ({ ...e, timeSlots: 'Each slot must be a different date/time — remove the duplicate' }))
+        return
+      }
     }
+    // Clear error once resolved
+    if (errors.timeSlots) setErrors(e => ({ ...e, timeSlots: '' }))
   }
 
   return (

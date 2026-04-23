@@ -30,7 +30,7 @@ interface NavbarProps {
 const navLinks = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/ladder', label: 'Ladder' },
-  { href: '/challenges', label: 'Challenges' },
+  { href: '/challenges', label: 'My Challenges' },
   { href: '/league', label: 'League' },
   { href: '/chat', label: 'Chat' },
 ]

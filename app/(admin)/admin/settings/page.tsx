@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { LeagueSettings, Tier, Season, Venue } from '@/types'
-import { Save, AlertTriangle, Plus, Pencil, Trash2, MapPin, Check, X } from 'lucide-react'
+import { Save, AlertTriangle, Plus, Pencil, Trash2, MapPin, Check, X, Star } from 'lucide-react'
 
 interface SettingsForm extends LeagueSettings {
   seasonName?: string
@@ -23,6 +23,7 @@ interface VenueForm {
   name: string
   address: string
   notes: string
+  is_partner: boolean
 }
 
 export default function SettingsPage() {
@@ -37,7 +38,7 @@ export default function SettingsPage() {
   const [hasChanges, setHasChanges] = useState(false)
 
   // Venue management state
-  const [venueForm, setVenueForm] = useState<VenueForm>({ name: '', address: '', notes: '' })
+  const [venueForm, setVenueForm] = useState<VenueForm>({ name: '', address: '', notes: '', is_partner: false })
   const [editingVenueId, setEditingVenueId] = useState<string | null>(null)
   const [showVenueForm, setShowVenueForm] = useState(false)
   const [venueSaving, setVenueSaving] = useState(false)
@@ -111,14 +112,14 @@ export default function SettingsPage() {
 
   function startAddVenue() {
     setEditingVenueId(null)
-    setVenueForm({ name: '', address: '', notes: '' })
+    setVenueForm({ name: '', address: '', notes: '', is_partner: false })
     setShowVenueForm(true)
     setVenueMessage({ type: '', text: '' })
   }
 
   function startEditVenue(venue: Venue) {
     setEditingVenueId(venue.id)
-    setVenueForm({ name: venue.name, address: venue.address || '', notes: venue.notes || '' })
+    setVenueForm({ name: venue.name, address: venue.address || '', notes: venue.notes || '', is_partner: venue.is_partner })
     setShowVenueForm(true)
     setVenueMessage({ type: '', text: '' })
   }
@@ -126,7 +127,7 @@ export default function SettingsPage() {
   function cancelVenueForm() {
     setShowVenueForm(false)
     setEditingVenueId(null)
-    setVenueForm({ name: '', address: '', notes: '' })
+    setVenueForm({ name: '', address: '', notes: '', is_partner: false })
   }
 
   async function handleSaveVenue() {
@@ -138,7 +139,7 @@ export default function SettingsPage() {
         const res = await fetch(`/api/venues/${editingVenueId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(venueForm),
+          body: JSON.stringify({ ...venueForm }),
         })
         if (!res.ok) throw new Error((await res.json()).error)
         const { venue } = await res.json()
@@ -215,6 +216,7 @@ export default function SettingsPage() {
           freeze_interval_days: settings.freeze_interval_days,
           freeze_interval_drop: settings.freeze_interval_drop,
           forfeit_drop_positions: settings.forfeit_drop_positions,
+          challenger_forfeit_drop_positions: (settings as any).challenger_forfeit_drop_positions ?? 0,
           sets_to_win: settings.sets_to_win,
           super_tiebreak_points: settings.super_tiebreak_points,
           tiebreak_points: settings.tiebreak_points,
@@ -225,7 +227,8 @@ export default function SettingsPage() {
           partner_change_drop_positions: settings.partner_change_drop_positions,
           slot_evening_count: (settings as any).slot_evening_count ?? 2,
           slot_weekend_count: (settings as any).slot_weekend_count ?? 1,
-          slot_evening_start_hour: (settings as any).slot_evening_start_hour ?? 18,
+          slot_evening_start_hour: (settings as any).slot_evening_start_hour ?? 17,
+          slot_evening_start_minute: (settings as any).slot_evening_start_minute ?? 30,
           slot_evening_end_hour: (settings as any).slot_evening_end_hour ?? 21,
           // Season fields (only if changed)
           ...(settings.seasonName || settings.startDate || settings.endDate ? {
@@ -442,13 +445,33 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div>
-                  <Label className="text-slate-300 text-xs">Notes (e.g. partner club discount)</Label>
+                  <Label className="text-slate-300 text-xs">Notes (e.g. discount details, special rules)</Label>
                   <Input
                     value={venueForm.notes}
                     onChange={e => setVenueForm(p => ({ ...p, notes: e.target.value }))}
-                    placeholder="Any special notes for players"
+                    placeholder="e.g. 20% discount for CPL members"
                     className="bg-slate-800 border-slate-600 text-white mt-1"
                   />
+                </div>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setVenueForm(p => ({ ...p, is_partner: !p.is_partner }))}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-sm transition-colors w-full mt-1 ${
+                      venueForm.is_partner
+                        ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                        : 'bg-slate-800 border-slate-600 text-slate-400 hover:border-slate-500'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
+                      venueForm.is_partner ? 'bg-emerald-500 border-emerald-500' : 'border-slate-500'
+                    }`}>
+                      {venueForm.is_partner && <Check className="w-2.5 h-2.5 text-white" />}
+                    </div>
+                    <Star className="w-3.5 h-3.5 shrink-0" />
+                    Partner venue
+                    <span className="text-xs text-slate-500 ml-auto font-normal">Shown in highlighted section of picker</span>
+                  </button>
                 </div>
                 <div className="flex gap-2 pt-1">
                   <Button
@@ -486,10 +509,15 @@ export default function SettingsPage() {
                         : 'bg-slate-900/20 border-slate-800 opacity-50'
                     }`}
                   >
-                    <MapPin className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
+                    <MapPin className={`w-4 h-4 mt-0.5 shrink-0 ${venue.is_partner ? 'text-emerald-400' : 'text-slate-500'}`} />
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-white font-medium text-sm">{venue.name}</span>
+                        {venue.is_partner && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
+                            <Star className="w-2.5 h-2.5" /> Partner
+                          </span>
+                        )}
                         {!venue.is_active && (
                           <span className="text-xs text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded">inactive</span>
                         )}
@@ -498,10 +526,29 @@ export default function SettingsPage() {
                         <p className="text-slate-400 text-xs mt-0.5">{venue.address}</p>
                       )}
                       {venue.notes && (
-                        <p className="text-emerald-400/70 text-xs mt-0.5">{venue.notes}</p>
+                        <p className="text-emerald-400/70 text-xs mt-0.5">★ {venue.notes}</p>
                       )}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={async () => {
+                          const res = await fetch(`/api/venues/${venue.id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ is_partner: !venue.is_partner }),
+                          })
+                          if (res.ok) {
+                            const { venue: updated } = await res.json()
+                            setVenues(prev => prev.map(v => v.id === venue.id ? updated : v))
+                          }
+                        }}
+                        className={`h-8 w-8 p-0 ${venue.is_partner ? 'text-emerald-400 hover:text-slate-400' : 'text-slate-500 hover:text-emerald-400'}`}
+                        title={venue.is_partner ? 'Remove partner status' : 'Mark as partner'}
+                      >
+                        <Star className="w-3.5 h-3.5" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -659,14 +706,14 @@ export default function SettingsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                   <div>
                     <Label htmlFor="slotEveningStart" className="text-slate-300">
-                      Evening Start Hour (24h) <span className="text-slate-500 text-sm">default: 18 (6 PM)</span>
+                      Evening Start Hour (24h) <span className="text-slate-500 text-sm">default: 17 (5 PM)</span>
                     </Label>
                     <Input
                       id="slotEveningStart"
                       type="number"
                       min="0"
                       max="23"
-                      value={(settings as any).slot_evening_start_hour ?? 18}
+                      value={(settings as any).slot_evening_start_hour ?? 17}
                       onChange={(e) => handleSettingChange('slot_evening_start_hour', parseInt(e.target.value))}
                       className="bg-slate-900 border-slate-600 text-white mt-2"
                     />
@@ -694,8 +741,10 @@ export default function SettingsPage() {
                   {(settings as any).slot_evening_count > 0 && (
                     <div>• {(settings as any).slot_evening_count ?? 2} × Evening slot{((settings as any).slot_evening_count ?? 2) > 1 ? 's' : ''} ({
                       (() => {
-                        const h = (settings as any).slot_evening_start_hour ?? 18
-                        return h === 0 ? '12:00 AM' : h < 12 ? `${h}:00 AM` : h === 12 ? '12:00 PM' : `${h - 12}:00 PM`
+                        const h = (settings as any).slot_evening_start_hour ?? 17
+                        const m = (settings as any).slot_evening_start_minute ?? 30
+                        const mm = m === 0 ? '00' : String(m)
+                        return h === 0 ? `12:${mm} AM` : h < 12 ? `${h}:${mm} AM` : h === 12 ? `12:${mm} PM` : `${h - 12}:${mm} PM`
                       })()
                     } – {
                       (() => {
@@ -771,7 +820,7 @@ export default function SettingsPage() {
             <div className="space-y-4">
               <div>
                 <Label htmlFor="forfeitDrop" className="text-slate-300">
-                  Positions Dropped on Forfeit <span className="text-slate-500 text-sm">default: 2</span>
+                  Challenged Team Forfeit Drop <span className="text-slate-500 text-sm">default: 2</span>
                 </Label>
                 <Input
                   id="forfeitDrop"
@@ -781,6 +830,22 @@ export default function SettingsPage() {
                   onChange={(e) => handleSettingChange('forfeit_drop_positions', parseInt(e.target.value))}
                   className="bg-slate-900 border-slate-600 text-white mt-2"
                 />
+                <p className="text-xs text-slate-500 mt-1">Positions the challenged team drops if they forfeit</p>
+              </div>
+
+              <div>
+                <Label htmlFor="challengerForfeitDrop" className="text-slate-300">
+                  Challenger Forfeit Drop <span className="text-slate-500 text-sm">default: 0</span>
+                </Label>
+                <Input
+                  id="challengerForfeitDrop"
+                  type="number"
+                  min="0"
+                  value={(settings as any).challenger_forfeit_drop_positions ?? 0}
+                  onChange={(e) => handleSettingChange('challenger_forfeit_drop_positions', parseInt(e.target.value))}
+                  className="bg-slate-900 border-slate-600 text-white mt-2"
+                />
+                <p className="text-xs text-slate-500 mt-1">Positions the challenger drops if they forfeit their own challenge (0 = no penalty)</p>
               </div>
 
               <div>

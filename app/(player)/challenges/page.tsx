@@ -6,7 +6,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useTeam } from '@/context/TeamContext'
 import { toast } from 'sonner'
-import { Clock, Zap, X, MapPin, Calendar, Ticket, AlertTriangle, ChevronRight, Trophy, Shield, CheckCircle, Loader2, TrendingUp } from 'lucide-react'
+import { Clock, Zap, X, MapPin, Calendar, Ticket, AlertTriangle, ChevronRight, Trophy, Shield, CheckCircle, Loader2, TrendingUp, MessageCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -35,7 +35,8 @@ interface EnhancedChallenge extends Challenge {
   isOutgoing: boolean
   opponentTeamName: string
   opponentPlayerNames: string
-  daysUntilDeadline: number
+  daysUntilDeadline: number | null
+  deadlineLabel: string
   matchResult?: MatchResult | null
 }
 
@@ -67,6 +68,9 @@ export default function ChallengesPage() {
   const [forfeitTarget, setForfeitTarget] = useState<{ id: string; code: string; opponent: string; myTeamId: string } | null>(null)
   const [forfeiting, setForfeiting] = useState(false)
 
+  // Chat state
+  const [chatLoading, setChatLoading] = useState<string | null>(null)
+
   // Send challenge modal state
   const [showSendModal, setShowSendModal] = useState(false)
   const [opponent, setOpponent] = useState<OpponentInfo | null>(null)
@@ -84,7 +88,8 @@ export default function ChallengesPage() {
   const [slotReqs, setSlotReqs] = useState({
     eveningCount: 2,
     weekendCount: 1,
-    eveningStartHour: 18,
+    eveningStartHour: 17,
+    eveningStartMinute: 30,
     eveningEndHour: 21,
   })
 
@@ -97,14 +102,15 @@ export default function ChallengesPage() {
       // Load slot requirements
       const { data: settings } = await supabase
         .from('league_settings')
-        .select('slot_evening_count, slot_weekend_count, slot_evening_start_hour, slot_evening_end_hour')
+        .select('slot_evening_count, slot_weekend_count, slot_evening_start_hour, slot_evening_start_minute, slot_evening_end_hour')
         .eq('season_id', season.id)
         .single()
       if (settings) {
         setSlotReqs({
           eveningCount: settings.slot_evening_count ?? 2,
           weekendCount: settings.slot_weekend_count ?? 1,
-          eveningStartHour: settings.slot_evening_start_hour ?? 18,
+          eveningStartHour: settings.slot_evening_start_hour ?? 17,
+          eveningStartMinute: settings.slot_evening_start_minute ?? 30,
           eveningEndHour: settings.slot_evening_end_hour ?? 21,
         })
       }
@@ -129,8 +135,32 @@ export default function ChallengesPage() {
 
       const enriched = (allChallenges || []).map(c => {
         const isOutgoing = c.challenging_team_id === teamId
-        const deadline = new Date(isOutgoing ? c.match_deadline : c.accept_deadline)
-        const daysUntil = Math.max(0, Math.ceil((deadline.getTime() - Date.now()) / 86400000))
+
+        // Pick the most relevant deadline + label for the current status
+        const deadlineInfo = (() => {
+          switch (c.status) {
+            case 'pending':
+              return { date: c.accept_deadline, label: 'to accept' }
+            case 'accepted':
+            case 'accepted_open':
+            case 'time_pending_confirm':
+            case 'revision_proposed':
+              return { date: c.confirmation_deadline ?? c.match_deadline, label: 'to schedule' }
+            case 'reschedule_requested':
+            case 'reschedule_pending_admin':
+              return { date: c.match_deadline, label: 'match deadline' }
+            case 'scheduled':
+              return { date: c.match_deadline, label: 'match deadline' }
+            default:
+              return { date: isOutgoing ? c.match_deadline : c.accept_deadline, label: 'deadline' }
+          }
+        })()
+
+        const deadlineDate = deadlineInfo.date ? new Date(deadlineInfo.date) : null
+        const daysUntil = deadlineDate
+          ? Math.max(0, Math.ceil((deadlineDate.getTime() - Date.now()) / 86400000))
+          : null
+
         const rawResult = Array.isArray(c.match_result) ? c.match_result[0] : c.match_result
         const opponentTeam = isOutgoing ? c.challenged_team : c.challenging_team
         const p1 = (opponentTeam as any)?.player1?.name
@@ -141,6 +171,7 @@ export default function ChallengesPage() {
           opponentTeamName: (opponentTeam as any)?.name || 'Unknown',
           opponentPlayerNames: [p1, p2].filter(Boolean).join(' & '),
           daysUntilDeadline: daysUntil,
+          deadlineLabel: deadlineInfo.label,
           matchResult: rawResult || null,
         }
       })
@@ -180,25 +211,36 @@ export default function ChallengesPage() {
     if (!opponentId || !seasonId) return
 
     async function loadOpponent() {
-      const { data } = await supabase
-        .from('teams')
-        .select(`
-          id, name,
-          player1:players!player1_id(name),
-          player2:players!player2_id(name),
-          ladder_position:ladder_positions!team_id(rank, tier:tiers!tier_id(name))
-        `)
-        .eq('id', opponentId)
-        .single()
+      // Fetch team and ladder position separately so we can filter by season_id.
+      // Embedding ladder_positions without a season filter returns rows from ALL seasons
+      // and the first row may be from a previous season with a stale tier.
+      const [{ data }, { data: posData }] = await Promise.all([
+        supabase
+          .from('teams')
+          .select(`
+            id, name,
+            player1:players!player1_id(name),
+            player2:players!player2_id(name)
+          `)
+          .eq('id', opponentId)
+          .single(),
+        supabase
+          .from('ladder_positions')
+          .select('rank, tier:tiers!tier_id(id, name)')
+          .eq('team_id', opponentId!)
+          .eq('season_id', seasonId!)
+          .single(),
+      ])
 
       if (!data) { toast.error('Opponent team not found'); return }
 
-      const pos = Array.isArray(data.ladder_position) ? data.ladder_position[0] : data.ladder_position
-      const tier = pos?.tier ? (Array.isArray(pos.tier) ? pos.tier[0] : pos.tier) : null
+      const tier = posData?.tier
+        ? (Array.isArray(posData.tier) ? posData.tier[0] : posData.tier)
+        : null
       setOpponent({
         id: data.id,
         name: data.name,
-        rank: pos?.rank ?? null,
+        rank: posData?.rank ?? null,
         tierName: (tier as any)?.name ?? null,
         player1Name: (data.player1 as any)?.name ?? '',
         player2Name: (data.player2 as any)?.name ?? '',
@@ -222,12 +264,20 @@ export default function ChallengesPage() {
       }
     }
 
-    const { eveningCount, weekendCount, eveningStartHour, eveningEndHour } = slotReqs
+    // Duplicate check
+    const rawSlots = [s1, s2, s3].filter(s => s.trim() !== '')
+    if (new Set(rawSlots).size < rawSlots.length) {
+      return 'Each time slot must be unique — remove the duplicate.'
+    }
 
-    // Evening: hour >= start && hour < end (local time)
+    const { eveningCount, weekendCount, eveningStartHour, eveningStartMinute, eveningEndHour } = slotReqs
+    const startMins = eveningStartHour * 60 + (eveningStartMinute ?? 0)
+    const endMins   = eveningEndHour * 60
+
+    // Evening: total minutes since midnight >= startMins && < endMins
     const isEvening = (d: Date) => {
-      const h = d.getHours()
-      return h >= eveningStartHour && h < eveningEndHour
+      const totalMins = d.getHours() * 60 + d.getMinutes()
+      return totalMins >= startMins && totalMins < endMins
     }
     // Weekend: Sat (6) or Sun (0). Friday (5) is a weekday.
     const isWeekend = (d: Date) => [0, 6].includes(d.getDay())
@@ -236,13 +286,14 @@ export default function ChallengesPage() {
     const weekendSlots = slots.filter(isWeekend).length
 
     if (eveningSlots < eveningCount) {
-      const fmtHour = (h: number) => {
-        if (h === 0) return '12:00 AM'
-        if (h < 12) return `${h}:00 AM`
-        if (h === 12) return '12:00 PM'
-        return `${h - 12}:00 PM`
+      const fmtTime = (h: number, m: number) => {
+        const mm = m === 0 ? '00' : String(m)
+        if (h === 0) return `12:${mm} AM`
+        if (h < 12) return `${h}:${mm} AM`
+        if (h === 12) return `12:${mm} PM`
+        return `${h - 12}:${mm} PM`
       }
-      return `At least ${eveningCount} slot${eveningCount !== 1 ? 's' : ''} must be in the evening (${fmtHour(eveningStartHour)} – ${fmtHour(eveningEndHour)}). You provided ${eveningSlots}.`
+      return `At least ${eveningCount} slot${eveningCount !== 1 ? 's' : ''} must be in the evening (${fmtTime(eveningStartHour, eveningStartMinute ?? 0)} – ${fmtTime(eveningEndHour, 0)}). You provided ${eveningSlots}.`
     }
     if (weekendSlots < weekendCount) {
       return `At least ${weekendCount} slot${weekendCount !== 1 ? 's' : ''} must be on a weekend (Saturday or Sunday). You provided ${weekendSlots}.`
@@ -321,6 +372,20 @@ export default function ChallengesPage() {
     finally { setVerifyLoading(null) }
   }
 
+  async function openChat(challengeId: string) {
+    setChatLoading(challengeId)
+    try {
+      const res = await fetch(`/api/chat/challenge/${challengeId}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.chatId) router.push(`/chat/${data.chatId}`)
+      } else {
+        toast.error('Chat not available yet')
+      }
+    } catch { toast.error('Failed to open chat') }
+    finally { setChatLoading(null) }
+  }
+
   async function handleForfeit() {
     if (!forfeitTarget) return
     setForfeiting(true)
@@ -337,6 +402,13 @@ export default function ChallengesPage() {
       if (activeTeam) fetchChallenges(activeTeam.id)
     } catch { toast.error('An error occurred') }
     finally { setForfeiting(false) }
+  }
+
+  // Returns "Challenger vs Challenged" for a challenge card title
+  const matchup = (c: EnhancedChallenge) => {
+    const chName = (c as any).challenging_team?.name ?? c.opponentTeamName
+    const cdName = (c as any).challenged_team?.name ?? c.opponentTeamName
+    return `${chName} vs ${cdName}`
   }
 
   // Small "Forfeit challenge" link shown at the bottom of each active card.
@@ -362,7 +434,7 @@ export default function ChallengesPage() {
 
   // ── Section derivations ────────────────────────────────────────────────
   const needsAction = challenges.filter(c => {
-    if (['played', 'forfeited', 'dissolved', 'scheduled'].includes(c.status)) return false
+    if (['result_pending', 'played', 'forfeited', 'dissolved', 'scheduled'].includes(c.status)) return false
     if (c.status === 'pending'              && !c.isOutgoing) return true  // incoming: accept/decline
     if (c.status === 'accepted_open'        && !c.isOutgoing) return true  // accepted open: enter time
     if (c.status === 'time_pending_confirm' &&  c.isOutgoing) return true  // opponent proposed time: confirm
@@ -373,21 +445,29 @@ export default function ChallengesPage() {
   })
 
   const activeChallenges = challenges.filter(c => {
-    if (['played', 'forfeited', 'dissolved', 'scheduled'].includes(c.status)) return false
+    if (['result_pending', 'played', 'forfeited', 'dissolved', 'scheduled'].includes(c.status)) return false
     return !needsAction.includes(c)
   })
 
   const upcomingMatches    = challenges.filter(c => c.status === 'scheduled')
+  const resultPendingChallenges = challenges.filter(c => c.status === 'result_pending')
   const matchHistory       = challenges.filter(c => ['played', 'forfeited'].includes(c.status))
   const dissolvedChallenges = challenges.filter(c => c.status === 'dissolved')
 
-  // Pending verification: played but result not yet verified, and I'm not the one who reported it
-  const pendingVerification = matchHistory.filter(c => {
+  // Pending verification: result_pending and I'm NOT the one who reported it → needs my action
+  const pendingVerification = resultPendingChallenges.filter(c => {
     const mr = c.matchResult
     if (!mr) return false
-    if (mr.verified_at || mr.auto_verified) return false
     const myTeamId = c.isOutgoing ? c.challenging_team_id : c.challenged_team_id
     return mr.reported_by_team_id !== myTeamId
+  })
+
+  // Awaiting verification: result_pending and I DID report it → waiting for opponent to verify
+  const awaitingVerification = resultPendingChallenges.filter(c => {
+    const mr = c.matchResult
+    if (!mr) return false
+    const myTeamId = c.isOutgoing ? c.challenging_team_id : c.challenged_team_id
+    return mr.reported_by_team_id === myTeamId
   })
 
   // Stats — verified results + forfeits both count
@@ -445,7 +525,7 @@ export default function ChallengesPage() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-semibold text-white">{challenge.opponentTeamName}</h3>
+              <h3 className="font-semibold text-white">{matchup(challenge)}</h3>
               <code className="text-xs px-1.5 py-0.5 bg-slate-700 text-slate-300 rounded">{challenge.challenge_code}</code>
               {statusBadge(challenge)}
             </div>
@@ -453,8 +533,8 @@ export default function ChallengesPage() {
               <p className="text-xs text-slate-500 mt-0.5">{challenge.opponentPlayerNames}</p>
             )}
             <p className="text-sm text-amber-300 mt-1">{actionText}</p>
-            {challenge.daysUntilDeadline > 0 && (
-              <p className="text-xs text-slate-500 mt-0.5">{challenge.daysUntilDeadline}d until deadline</p>
+            {challenge.daysUntilDeadline != null && challenge.daysUntilDeadline > 0 && (
+              <p className="text-xs text-slate-500 mt-0.5">{challenge.daysUntilDeadline}d {challenge.deadlineLabel}</p>
             )}
           </div>
         </div>
@@ -463,6 +543,16 @@ export default function ChallengesPage() {
             Take Action →
           </Button>
         </Link>
+        {challenge.status !== 'pending' && (
+          <button
+            onClick={() => openChat(challenge.id)}
+            disabled={chatLoading === challenge.id}
+            className="flex items-center gap-1.5 justify-center text-xs text-slate-400 hover:text-emerald-400 transition-colors mt-1 w-full py-0.5"
+          >
+            {chatLoading === challenge.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <MessageCircle className="h-3 w-3" />}
+            Open Chat
+          </button>
+        )}
         <ForfeitTrigger challenge={challenge} />
       </Card>
     )
@@ -539,6 +629,53 @@ export default function ChallengesPage() {
     )
   }
 
+  // ── Awaiting verification card (I reported, waiting for opponent) ────────
+  const AwaitingVerifyCard = ({ challenge }: { challenge: EnhancedChallenge }) => {
+    const mr = challenge.matchResult!
+    const scoreParts = [
+      mr.set1_challenger != null ? `${mr.set1_challenger}–${mr.set1_challenged}` : null,
+      mr.set2_challenger != null ? `${mr.set2_challenger}–${mr.set2_challenged}` : null,
+      mr.supertiebreak_challenger != null ? `[${mr.supertiebreak_challenger}–${mr.supertiebreak_challenged}]` : null,
+    ].filter(Boolean).join(', ')
+
+    return (
+      <Card className="bg-slate-800/60 border-blue-500/20 p-4 space-y-2">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full font-medium uppercase tracking-wide">
+                Awaiting Verification
+              </span>
+            </div>
+            <p className="font-semibold text-white">
+              vs <span className="text-emerald-400">{challenge.opponentTeamName}</span>
+            </p>
+            {mr.match_date && (
+              <p className="text-slate-400 text-xs">{(() => { const d = new Date(mr.match_date); const wd = d.toLocaleDateString('en-GB', { weekday: 'short' }); return `${wd} ${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}` })()}</p>
+            )}
+            <p className="text-slate-300 text-xs font-mono mt-0.5">
+              {challenge.challenging_team?.name ?? 'Challenger'}: {scoreParts}
+            </p>
+            <p className="text-slate-400 text-xs mt-1">
+              Waiting for <span className="text-white font-medium">{challenge.opponentTeamName}</span> to verify the result.
+            </p>
+          </div>
+          {mr.verify_deadline && (
+            <div className="text-right shrink-0">
+              <p className="text-[10px] text-slate-500 mb-0.5">Auto-verifies in</p>
+              <VerifyCountdown deadline={mr.verify_deadline} />
+            </div>
+          )}
+        </div>
+        <Link href={`/challenges/${challenge.id}`}>
+          <Button variant="ghost" size="sm" className="w-full text-slate-400 hover:text-white text-xs">
+            View Challenge
+          </Button>
+        </Link>
+      </Card>
+    )
+  }
+
   // ── Active challenge card ──────────────────────────────────────────────
   const ChallengeCard = ({ challenge }: { challenge: EnhancedChallenge }) => {
     const waitMap: Record<string, string> = {
@@ -560,7 +697,7 @@ export default function ChallengesPage() {
         <div className="flex items-start justify-between gap-3 mb-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-semibold text-white truncate">{challenge.opponentTeamName}</h3>
+              <h3 className="font-semibold text-white truncate">{matchup(challenge)}</h3>
               <code className="text-xs px-1.5 py-0.5 bg-slate-700 text-slate-300 rounded">{challenge.challenge_code}</code>
             </div>
             {challenge.opponentPlayerNames && (
@@ -578,12 +715,22 @@ export default function ChallengesPage() {
           <Clock className="h-3.5 w-3.5 shrink-0 text-slate-500" />
           <span>{waitText}</span>
         </div>
-        {challenge.daysUntilDeadline > 0 && (
-          <p className="text-xs text-slate-500 mb-3">{challenge.daysUntilDeadline}d until deadline</p>
+        {challenge.daysUntilDeadline != null && challenge.daysUntilDeadline > 0 && (
+          <p className="text-xs text-slate-500 mb-3">{challenge.daysUntilDeadline}d {challenge.deadlineLabel}</p>
         )}
-        <Link href={`/challenges/${challenge.id}`}>
-          <Button variant="ghost" size="sm" className="w-full">View Details</Button>
-        </Link>
+        <div className="flex gap-2">
+          <Link href={`/challenges/${challenge.id}`} className="flex-1">
+            <Button variant="ghost" size="sm" className="w-full">View Details</Button>
+          </Link>
+          {challenge.status !== 'pending' && (
+            <Button variant="ghost" size="sm"
+              onClick={() => openChat(challenge.id)}
+              disabled={chatLoading === challenge.id}
+              className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 px-2.5">
+              {chatLoading === challenge.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageCircle className="h-3.5 w-3.5" />}
+            </Button>
+          )}
+        </div>
         <ForfeitTrigger challenge={challenge} />
       </Card>
     )
@@ -606,7 +753,7 @@ export default function ChallengesPage() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-0.5">
-              <h3 className="font-semibold text-white">{challenge.opponentTeamName}</h3>
+              <h3 className="font-semibold text-white">{matchup(challenge)}</h3>
               <code className="text-xs px-1.5 py-0.5 bg-slate-700 text-slate-300 rounded">{challenge.challenge_code}</code>
             </div>
             {challenge.opponentPlayerNames && (
@@ -624,9 +771,18 @@ export default function ChallengesPage() {
           </div>
         </div>
         <div className="mt-3 pt-3 border-t border-slate-700/50">
-          <Link href={`/challenges/${challenge.id}`}>
-            <Button variant="ghost" size="sm" className="w-full">View Details</Button>
-          </Link>
+          <div className="flex gap-2">
+            <Link href={`/challenges/${challenge.id}`} className="flex-1">
+              <Button variant="ghost" size="sm" className="w-full">View Details</Button>
+            </Link>
+            <Button variant="ghost" size="sm"
+              onClick={() => openChat(challenge.id)}
+              disabled={chatLoading === challenge.id}
+              className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 gap-1.5 px-3">
+              {chatLoading === challenge.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageCircle className="h-3.5 w-3.5" />}
+              Chat
+            </Button>
+          </div>
           <ForfeitTrigger challenge={challenge} />
         </div>
       </Card>
@@ -795,6 +951,20 @@ export default function ChallengesPage() {
         )}
       </section>
 
+      {/* ── Awaiting Verification ── */}
+      {awaitingVerification.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4 text-blue-400" />
+            <h2 className="text-xs font-semibold text-blue-300 uppercase tracking-widest">Awaiting Verification</h2>
+            <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-full text-xs font-medium">{awaitingVerification.length}</span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {awaitingVerification.map(c => <AwaitingVerifyCard key={c.id} challenge={c} />)}
+          </div>
+        </section>
+      )}
+
       {/* ── Match History ── */}
       <section className="space-y-3">
         <div className="flex items-center gap-2">
@@ -939,12 +1109,19 @@ export default function ChallengesPage() {
                   const ticketNames = teamTickets
                     .map(t => t.ticket_type.charAt(0).toUpperCase() + t.ticket_type.slice(1))
                     .join(' + ')
+                  const plural = teamTickets.length > 1
                   return (
-                    <div className="flex items-start gap-2.5 p-3.5 bg-slate-700/50 border border-slate-600/50 rounded-xl">
-                      <Ticket className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
-                      <p className="text-sm text-slate-300">
-                        You have a <span className="font-semibold text-white">{ticketNames} ticket</span> — this challenge won't use it.
-                      </p>
+                    <div className="flex items-start gap-2.5 p-3.5 bg-red-500/10 border border-red-500/40 rounded-xl">
+                      <AlertTriangle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-red-300">
+                          ⚠️ Your {ticketNames} ticket{plural ? 's' : ''} will be permanently forfeited!
+                        </p>
+                        <p className="text-xs text-red-300/80">
+                          Your first challenge must use {plural ? 'your tickets in order' : 'your ticket'}.
+                          Sending this challenge without using {plural ? 'them' : 'it'} will forfeit {plural ? 'all your tickets' : 'your ticket'} immediately and permanently.
+                        </p>
+                      </div>
                     </div>
                   )
                 }
@@ -973,8 +1150,14 @@ export default function ChallengesPage() {
                     <span>
                       {slotReqs.eveningCount} × evening slot{slotReqs.eveningCount !== 1 ? 's' : ''} —{' '}
                       {(() => {
-                        const fmtH = (h: number) => h === 0 ? '12:00 AM' : h < 12 ? `${h}:00 AM` : h === 12 ? '12:00 PM' : `${h - 12}:00 PM`
-                        return `${fmtH(slotReqs.eveningStartHour)} to ${fmtH(slotReqs.eveningEndHour)}`
+                        const fmtT = (h: number, m: number) => {
+                          const mm = m === 0 ? '00' : String(m)
+                          if (h === 0) return `12:${mm} AM`
+                          if (h < 12) return `${h}:${mm} AM`
+                          if (h === 12) return `12:${mm} PM`
+                          return `${h - 12}:${mm} PM`
+                        }
+                        return `${fmtT(slotReqs.eveningStartHour, slotReqs.eveningStartMinute ?? 0)} to ${fmtT(slotReqs.eveningEndHour, 0)}`
                       })()}
                     </span>
                   </div>

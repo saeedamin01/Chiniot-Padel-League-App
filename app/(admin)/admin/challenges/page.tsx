@@ -439,7 +439,7 @@ export default function ChallengesPage() {
 
   const filteredChallenges = challenges.filter((c) => {
     if (filter === 'all') return true
-    if (filter === 'overdue') return isDeadlineExpired(c.accept_deadline) && c.status !== 'played'
+    if (filter === 'overdue') return isDeadlineExpired(c.accept_deadline) && !['played', 'result_pending'].includes(c.status)
     return c.status === filter
   })
 
@@ -777,7 +777,7 @@ export default function ChallengesPage() {
                 return (
                   <TableRow
                     key={challenge.id}
-                    className={`border-slate-700 ${isOverdue && challenge.status !== 'played' ? 'bg-red-500/5' : ''}`}
+                    className={`border-slate-700 ${isOverdue && !['played', 'result_pending'].includes(challenge.status) ? 'bg-red-500/5' : ''}`}
                   >
                     <TableCell className="font-mono text-white">
                       {challenge.challenge_code}
@@ -812,7 +812,7 @@ export default function ChallengesPage() {
                       >
                         {challenge.status}
                       </Badge>
-                      {isOverdue && challenge.status !== 'played' && (
+                      {isOverdue && !['played', 'result_pending'].includes(challenge.status) && (
                         <Badge variant="destructive" className="ml-2">
                           Overdue
                         </Badge>
@@ -820,7 +820,7 @@ export default function ChallengesPage() {
                     </TableCell>
                     <TableCell className="text-slate-300 text-sm">
                       <div>{formatDateTime(challenge.accept_deadline)}</div>
-                      {!isOverdue && challenge.status !== 'played' && (
+                      {!isOverdue && !['played', 'result_pending'].includes(challenge.status) && (
                         <div className="text-xs text-slate-500 mt-1">
                           {hoursLeft}h remaining
                         </div>
@@ -1058,7 +1058,7 @@ export default function ChallengesPage() {
                   {[
                     'pending', 'accepted', 'accepted_open', 'time_pending_confirm',
                     'reschedule_requested', 'reschedule_pending_admin',
-                    'scheduled', 'played', 'forfeited', 'dissolved',
+                    'scheduled', 'result_pending', 'played', 'forfeited', 'dissolved',
                   ].map(s => (
                     <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
                   ))}

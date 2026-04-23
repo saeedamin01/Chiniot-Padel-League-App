@@ -38,19 +38,20 @@ export async function getTeamActiveChallenge(teamId: string, seasonId: string) {
     .select('*, challenging_team:teams!challenging_team_id(*), challenged_team:teams!challenged_team_id(*)')
     .eq('challenging_team_id', teamId)
     .eq('season_id', seasonId)
-    .in('status', ['pending', 'accepted', 'accepted_open', 'time_pending_confirm', 'reschedule_requested', 'reschedule_pending_admin', 'revision_proposed', 'scheduled'])
+    .in('status', ['pending', 'accepted', 'accepted_open', 'time_pending_confirm', 'reschedule_requested', 'reschedule_pending_admin', 'revision_proposed', 'scheduled', 'result_pending'])
     .maybeSingle()
 
   // For incoming: only check for ACCEPTED (or beyond) challenges.
   // A team may have multiple simultaneous PENDING incoming challenges — that is intentional.
   // Accepting one dissolves the rest. So we must NOT block new challengers just because
   // the team already has a pending incoming. Only an accepted challenge locks them out.
+  // result_pending locks both teams until the score is verified.
   const { data: incoming } = await supabase
     .from('challenges')
     .select('*, challenging_team:teams!challenging_team_id(*), challenged_team:teams!challenged_team_id(*)')
     .eq('challenged_team_id', teamId)
     .eq('season_id', seasonId)
-    .in('status', ['accepted', 'accepted_open', 'time_pending_confirm', 'reschedule_requested', 'reschedule_pending_admin', 'revision_proposed', 'scheduled'])
+    .in('status', ['accepted', 'accepted_open', 'time_pending_confirm', 'reschedule_requested', 'reschedule_pending_admin', 'revision_proposed', 'scheduled', 'result_pending'])
     .maybeSingle()  // at most 1 accepted challenge can exist at a time — safe to use .maybeSingle()
 
   return { outgoing, incoming }
@@ -585,6 +586,15 @@ export async function processMatchResult(
 }
 
 // ─── processForfeit ───────────────────────────────────────────────────────────
+//
+// Rules:
+//   Challenger forfeits (sent challenge upward, then withdrew):
+//     → No ladder movement for either team. No penalty. Challenge simply closes.
+//
+//   Challenged team forfeits (received challenge, didn't play):
+//     → Winner (challenger) moves up to challenged team's rank (same as a normal win).
+//     → Challenged team drops `forfeit_drop_positions` from their ORIGINAL rank.
+//     → `consecutive_forfeits` incremented for the penalised team.
 
 export async function processForfeit(challengeId: string, forfeitingTeamId: string) {
   const supabase = createAdminClient()
@@ -610,7 +620,6 @@ export async function processForfeit(challengeId: string, forfeitingTeamId: stri
   const winnerPos  = positions?.find(p => p.team_id === winnerTeamId)
   if (!forfeitPos || !winnerPos) return { success: false, error: 'Positions not found' }
 
-  // Capture previous last_challenged values for OR-clearing at the end
   const forfeitOldLastChallenged = forfeitPos.last_challenged_team_id as string | null
   const winnerOldLastChallenged  = winnerPos.last_challenged_team_id  as string | null
 
@@ -618,52 +627,77 @@ export async function processForfeit(challengeId: string, forfeitingTeamId: stri
     .from('ladder_positions').select('id', { count: 'exact' }).eq('season_id', seasonId)
   const total = totalTeams || 100
 
-  if (winnerRankIsBelow(winnerPos.rank, forfeitPos.rank)) {
-    // ── Challenger forfeited — winner (challenged) was above, forfeiter was below ──
-    // Winner stays where it is. Forfeiter drops forfeit_drop_positions spots.
-    // Teams between [forfeitRank+1, newForfeitRank] shift up by 1 to close the gap.
-    //
-    // UNIQUE fix: park the forfeiter at rank 0 before shifting, so teams shifting
-    // up into its old rank don't hit a UNIQUE conflict.
-    const newForfeitRank = Math.min(forfeitPos.rank + settings.forfeit_drop_positions, total)
+  const challengerForfeited = forfeitingTeamId === challenge.challenging_team_id
 
-    // Park forfeiter at rank 0
-    await supabase.from('ladder_positions')
-      .update({ rank: 0 })
-      .eq('team_id', forfeitingTeamId).eq('season_id', seasonId)
+  if (challengerForfeited) {
+    // ── Challenger forfeited ───────────────────────────────────────────────────
+    // The team that sent the challenge upward decided to withdraw.
+    // Drop them by challenger_forfeit_drop_positions (default 0 = no change).
+    // No movement for the challenged team (winner) regardless.
 
-    // Shift teams between old forfeit rank+1 and new forfeit rank up by 1
-    if (forfeitPos.rank + 1 <= newForfeitRank) {
-      await shiftActiveTeams(
-        supabase, seasonId,
-        forfeitPos.rank + 1,
-        newForfeitRank,
-        -1,
-        challengeId, 'forfeit', 'Shifted up — challenger forfeited'
-      )
+    const drop = (settings as any).challenger_forfeit_drop_positions ?? 0
+
+    if (drop > 0) {
+      const forfeitFinalRank = Math.min(forfeitPos.rank + drop, total)
+
+      // Park forfeiter, shift teams in [forfeitPos.rank+1 .. forfeitFinalRank] UP
+      // to close the gap, then place forfeiter at penalty rank.
+      await supabase.from('ladder_positions')
+        .update({ rank: 0 })
+        .eq('team_id', forfeitingTeamId).eq('season_id', seasonId)
+
+      if (forfeitPos.rank + 1 <= forfeitFinalRank) {
+        await shiftActiveTeams(
+          supabase, seasonId,
+          forfeitPos.rank + 1,
+          forfeitFinalRank,
+          -1,
+          challengeId, 'forfeit', 'Shifted up — challenger forfeited'
+        )
+      }
+
+      await supabase.from('ladder_positions')
+        .update({ rank: forfeitFinalRank, consecutive_forfeits: forfeitPos.consecutive_forfeits + 1 })
+        .eq('team_id', forfeitingTeamId).eq('season_id', seasonId)
+
+      // Check consecutive forfeits limit
+      const newConsec = forfeitPos.consecutive_forfeits + 1
+      if (newConsec >= settings.consecutive_forfeit_limit) {
+        await supabase.from('ladder_positions')
+          .update({ rank: total, consecutive_forfeits: 0 })
+          .eq('team_id', forfeitingTeamId).eq('season_id', seasonId)
+
+        const { data: forfeitingTeam } = await supabase
+          .from('teams').select('name').eq('id', forfeitingTeamId).single()
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+        await notifyAdmins({
+          type: 'consecutive_forfeit_limit',
+          title: '⚠️ Forfeit limit reached',
+          message: `${forfeitingTeam?.name ?? 'A team'} has reached the consecutive forfeit limit (${settings.consecutive_forfeit_limit}) and has been moved to the bottom of the ladder. Consider dissolving the team.`,
+          actionUrl: `${appUrl}/admin/teams`,
+        })
+      }
+
+      await updateTeamTier(forfeitingTeamId, seasonId)
     }
-
-    // Place forfeiter at the penalty rank
-    await supabase.from('ladder_positions')
-      .update({ rank: newForfeitRank, consecutive_forfeits: forfeitPos.consecutive_forfeits + 1 })
-      .eq('team_id', forfeitingTeamId).eq('season_id', seasonId)
+    // If drop == 0: no changes at all (the back-to-back clear below still runs)
 
   } else {
-    // ── Challenged forfeited — winner (challenger) was below, forfeiter was above ──
-    // Winner earns the forfeiter's old rank (same movement as a normal win).
-    // Forfeiter additionally drops forfeit_drop_positions spots from the winner's old rank.
-    //
-    // UNIQUE fix: park the winner at rank 0 before shifting, so Team at
-    // (winnerPos.rank - 1) can shift into winnerPos.rank without conflict.
-    const newForfeitRank = Math.min(winnerPos.rank + settings.forfeit_drop_positions, total)
+    // ── Challenged team forfeited ─────────────────────────────────────────────
+    // The higher-ranked team did not play. Winner (challenger) moves up.
+    // Forfeiter drops `forfeit_drop_positions` from their original rank.
 
-    // Park winner at rank 0
+    const forfeitFinalRank = Math.min(
+      forfeitPos.rank + settings.forfeit_drop_positions,
+      total
+    )
+
+    // ── Step A: move winner up to forfeiter's rank (identical to a normal win) ──
     await supabase.from('ladder_positions')
       .update({ rank: 0 })
       .eq('team_id', winnerTeamId).eq('season_id', seasonId)
 
-    // Shift teams between the two positions down by 1
-    if (forfeitPos.rank < winnerPos.rank) {
+    if (forfeitPos.rank <= winnerPos.rank - 1) {
       await shiftActiveTeams(
         supabase, seasonId,
         forfeitPos.rank,
@@ -673,63 +707,86 @@ export async function processForfeit(challengeId: string, forfeitingTeamId: stri
       )
     }
 
-    // Place winner at the forfeiter's old rank
     await supabase.from('ladder_positions')
       .update({ rank: forfeitPos.rank })
       .eq('team_id', winnerTeamId).eq('season_id', seasonId)
 
-    // Place forfeiter at penalty rank
-    await supabase.from('ladder_positions')
-      .update({ rank: newForfeitRank, consecutive_forfeits: forfeitPos.consecutive_forfeits + 1 })
-      .eq('team_id', forfeitingTeamId).eq('season_id', seasonId)
-  }
-
-  // Check consecutive forfeits limit
-  const newConsec = forfeitPos.consecutive_forfeits + 1
-  if (newConsec >= settings.consecutive_forfeit_limit) {
-    await supabase.from('ladder_positions')
-      .update({ rank: total, consecutive_forfeits: 0 })
-      .eq('team_id', forfeitingTeamId).eq('season_id', seasonId)
-
-    // Notify admins: team hit the forfeit limit and was dropped to the bottom
-    const { data: forfeitingTeam } = await supabase
-      .from('teams').select('name').eq('id', forfeitingTeamId).single()
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    await notifyAdmins({
-      type: 'consecutive_forfeit_limit',
-      title: '⚠️ Forfeit limit reached',
-      message: `${forfeitingTeam?.name ?? 'A team'} has reached the consecutive forfeit limit (${settings.consecutive_forfeit_limit}) and has been moved to the bottom of the ladder. Consider dissolving the team.`,
-      actionUrl: `${appUrl}/admin/teams`,
+    await supabase.from('ladder_history').insert({
+      season_id: seasonId,
+      team_id: winnerTeamId,
+      old_rank: winnerPos.rank,
+      new_rank: forfeitPos.rank,
+      change_type: 'forfeit_win',
+      related_challenge_id: challengeId,
     })
+
+    // After Step A, forfeiter is at forfeitPos.rank + 1 (shifted down once).
+    const currentForfeitRank = forfeitPos.rank + 1
+
+    // ── Step B: apply additional penalty to drop forfeiter to forfeitFinalRank ──
+    // Shift teams in [currentForfeitRank+1 .. forfeitFinalRank] UP by 1 to fill
+    // the gap, then place forfeiter at forfeitFinalRank.
+    if (forfeitFinalRank > currentForfeitRank) {
+      await supabase.from('ladder_positions')
+        .update({ rank: 0 })
+        .eq('team_id', forfeitingTeamId).eq('season_id', seasonId)
+
+      await shiftActiveTeams(
+        supabase, seasonId,
+        currentForfeitRank + 1,
+        forfeitFinalRank,
+        -1,
+        challengeId, 'forfeit', 'Shifted up — displaced by forfeit penalty'
+      )
+
+      await supabase.from('ladder_positions')
+        .update({ rank: forfeitFinalRank, consecutive_forfeits: forfeitPos.consecutive_forfeits + 1 })
+        .eq('team_id', forfeitingTeamId).eq('season_id', seasonId)
+    } else {
+      // forfeit_drop_positions == 1: forfeiter already at correct rank after Step A
+      await supabase.from('ladder_positions')
+        .update({ consecutive_forfeits: forfeitPos.consecutive_forfeits + 1 })
+        .eq('team_id', forfeitingTeamId).eq('season_id', seasonId)
+    }
+
+    // Check consecutive forfeits limit
+    const newConsec = forfeitPos.consecutive_forfeits + 1
+    if (newConsec >= settings.consecutive_forfeit_limit) {
+      await supabase.from('ladder_positions')
+        .update({ rank: total, consecutive_forfeits: 0 })
+        .eq('team_id', forfeitingTeamId).eq('season_id', seasonId)
+
+      const { data: forfeitingTeam } = await supabase
+        .from('teams').select('name').eq('id', forfeitingTeamId).single()
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      await notifyAdmins({
+        type: 'consecutive_forfeit_limit',
+        title: '⚠️ Forfeit limit reached',
+        message: `${forfeitingTeam?.name ?? 'A team'} has reached the consecutive forfeit limit (${settings.consecutive_forfeit_limit}) and has been moved to the bottom of the ladder. Consider dissolving the team.`,
+        actionUrl: `${appUrl}/admin/teams`,
+      })
+    }
+
+    await updateTeamTier(winnerTeamId, seasonId)
+    await updateTeamTier(forfeitingTeamId, seasonId)
   }
 
-  await updateTeamTier(winnerTeamId, seasonId)
-  await updateTeamTier(forfeitingTeamId, seasonId)
-
-  // ── Shared OR back-to-back clearing (forfeit) ─────────────────────────────
+  // ── Clear back-to-back restrictions (both forfeit types) ─────────────────
   if (forfeitOldLastChallenged && forfeitOldLastChallenged !== winnerTeamId) {
-    await supabase
-      .from('ladder_positions')
+    await supabase.from('ladder_positions')
       .update({ last_challenged_team_id: null })
-      .eq('team_id', forfeitOldLastChallenged)
-      .eq('season_id', seasonId)
+      .eq('team_id', forfeitOldLastChallenged).eq('season_id', seasonId)
       .eq('last_challenged_team_id', forfeitingTeamId)
   }
 
   if (winnerOldLastChallenged && winnerOldLastChallenged !== forfeitingTeamId) {
-    await supabase
-      .from('ladder_positions')
+    await supabase.from('ladder_positions')
       .update({ last_challenged_team_id: null })
-      .eq('team_id', winnerOldLastChallenged)
-      .eq('season_id', seasonId)
+      .eq('team_id', winnerOldLastChallenged).eq('season_id', seasonId)
       .eq('last_challenged_team_id', winnerTeamId)
   }
 
   return { success: true }
-}
-
-function winnerRankIsBelow(winnerRank: number, forfeitRank: number) {
-  return winnerRank < forfeitRank // lower rank number = higher position
 }
 
 // ─── updateTeamTier ───────────────────────────────────────────────────────────

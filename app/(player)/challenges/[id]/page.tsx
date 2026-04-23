@@ -23,6 +23,9 @@ import {
   History,
   MessageCircle,
   Phone,
+  ChevronDown,
+  ChevronUp,
+  Lock,
 } from 'lucide-react'
 import { EVENT_LABELS, EVENT_COLOURS } from '@/lib/challenges/events'
 import { DateTimeSlotPicker } from '@/components/ui/DateTimeSlotPicker'
@@ -38,6 +41,7 @@ interface ChallengeEvent {
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { VenuePicker } from '@/components/ui/VenuePicker'
 import type { Challenge, Team, MatchResult, Venue } from '@/types'
 
 interface PlayerContact {
@@ -55,6 +59,8 @@ interface DetailedChallenge extends Omit<Challenge, 'challenging_team' | 'challe
   reschedule_requested_by?: string | null
   reschedule_proposed_time?: string | null
   reschedule_reason?: string | null
+  // Tracks which team submitted the time in accepted_open → the OTHER team confirms
+  time_submitted_by_team_id?: string | null
 }
 
 // ── Countdown hook ────────────────────────────────────────────────────────────
@@ -165,6 +171,7 @@ export default function ChallengeDetailPage() {
 
   // Chat
   const [chatId, setChatId] = useState<string | null>(null)
+  const [slotsOpen, setSlotsOpen] = useState(false)
 
   const supabase = createClient()
 
@@ -266,19 +273,25 @@ export default function ChallengeDetailPage() {
 
       setChallenge(normalized)
 
-      // Look up the chat room for this challenge (exists once it's accepted)
-      const ACCEPTED_STATUSES = ['accepted_open', 'accepted', 'time_pending_confirm', 'revision_proposed', 'reschedule_requested', 'reschedule_pending_admin', 'scheduled', 'played', 'forfeited']
+      // Look up (or lazily create) the chat room for this challenge.
+      // The API endpoint creates the chat if it doesn't exist yet — this handles
+      // challenges accepted before the chat migration was applied, or any timing
+      // gaps where the accept route's chat creation failed silently.
+      const ACCEPTED_STATUSES = ['accepted_open', 'accepted', 'time_pending_confirm', 'revision_proposed', 'reschedule_requested', 'reschedule_pending_admin', 'scheduled', 'result_pending', 'played', 'forfeited']
       if (ACCEPTED_STATUSES.includes(normalized.status)) {
-        const { data: chatRow } = await supabase
-          .from('challenge_chats')
-          .select('id')
-          .eq('challenge_id', challengeId)
-          .single()
-        if (chatRow) setChatId(chatRow.id)
+        try {
+          const chatRes = await fetch(`/api/chat/challenge/${challengeId}`)
+          if (chatRes.ok) {
+            const chatData = await chatRes.json()
+            if (chatData.chatId) setChatId(chatData.chatId)
+          }
+        } catch {
+          // Non-fatal — chat button just won't show
+        }
       }
 
       // Load active venues for accept form (pending) and for add-location / reschedule forms
-      if (!['played', 'forfeited', 'dissolved'].includes(normalized.status)) {
+      if (!['result_pending', 'played', 'forfeited', 'dissolved'].includes(normalized.status)) {
         const { data: venueData } = await supabase
           .from('venues')
           .select('*')
@@ -722,6 +735,15 @@ export default function ChallengeDetailPage() {
   const isChallengedTeam = userTeamIds.includes(challenge.challenged_team_id)
   const slots = [challenge.slot_1, challenge.slot_2, challenge.slot_3].filter(Boolean) as string[]
 
+  // Which team submitted the time (for time_pending_confirm logic)
+  const isSubmittingTeam = !!(challenge.time_submitted_by_team_id &&
+    userTeamIds.includes(challenge.time_submitted_by_team_id))
+  const isConfirmingTeam = (isChallengingTeam || isChallengedTeam) && !isSubmittingTeam
+  // Name of whichever team submitted the time (for UI labels)
+  const submittingTeamName = challenge.time_submitted_by_team_id === challenge.challenging_team_id
+    ? challenge.challenging_team?.name
+    : challenge.challenged_team?.name
+
   // Accept deadline countdown (the 24-hour window)
   const acceptDeadline = challenge.accept_deadline ?? null
 
@@ -732,14 +754,17 @@ export default function ChallengeDetailPage() {
     pending: 'Awaiting response',
     accepted: isChallengingTeam ? 'Confirm the time' : 'Waiting for challenger to confirm',
     accepted_open: 'Enter agreed match time',
-    time_pending_confirm: isChallengingTeam ? 'Please confirm the agreed time' : 'Waiting for challenger to confirm',
+    time_pending_confirm: isSubmittingTeam
+      ? 'Waiting for opponent to confirm the time'
+      : (isChallengingTeam || isChallengedTeam) ? 'Please confirm the agreed time' : 'Awaiting time confirmation',
     reschedule_requested: challenge?.reschedule_requested_by && userTeamIds.includes(challenge.reschedule_requested_by)
       ? 'Awaiting other team\'s response'
       : 'Reschedule requested — please respond',
     reschedule_pending_admin: 'Awaiting admin approval',
     revision_proposed: 'Revised time proposed',
     scheduled: 'Match scheduled',
-    played: resultVerified ? 'Match completed' : 'Awaiting result verification',
+    result_pending: 'Awaiting result verification',
+    played: 'Match completed',
     forfeited: 'Forfeited',
     dissolved: 'Dissolved',
   }
@@ -859,6 +884,35 @@ export default function ChallengeDetailPage() {
         </Card>
       )}
 
+      {/* Proposed slots — collapsible reference for challenger */}
+      {isChallengingTeam && slots.length > 0 && ['pending', 'accepted_open'].includes(challenge.status) && (
+        <Card className="bg-slate-800/60 border-slate-700/50 overflow-hidden">
+          <button
+            onClick={() => setSlotsOpen(o => !o)}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-700/30 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Calendar className="h-3.5 w-3.5 text-slate-400" />
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Your Proposed Slots</p>
+            </div>
+            {slotsOpen
+              ? <ChevronUp className="h-3.5 w-3.5 text-slate-500" />
+              : <ChevronDown className="h-3.5 w-3.5 text-slate-500" />}
+          </button>
+          {slotsOpen && (
+            <div className="px-4 pb-3 flex flex-col gap-1.5 border-t border-slate-700/40 pt-2.5">
+              {slots.map((slot, i) => (
+                <div key={slot} className="flex items-center gap-2 text-sm text-slate-300">
+                  <span className="text-[10px] font-bold text-slate-500 w-10 shrink-0">Slot {i + 1}</span>
+                  <Calendar className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                  {new Date(slot).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true })}
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
       {/* Status + Countdown Row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         {/* Status */}
@@ -883,8 +937,13 @@ export default function ChallengeDetailPage() {
             <CountdownDisplay deadline={acceptDeadline} label="Accept deadline" />
           </Card>
         )}
-        {/* Confirmation window countdown — when accepted or time_pending_confirm, show to challenger */}
-        {['accepted', 'time_pending_confirm'].includes(challenge.status) && challenge.confirmation_deadline && isChallengingTeam && (
+        {/* Confirmation window countdown — show to whichever team must confirm */}
+        {challenge.status === 'accepted' && challenge.confirmation_deadline && isChallengingTeam && (
+          <Card className="bg-orange-500/10 border-orange-500/30 p-4 col-span-2 sm:col-span-1">
+            <CountdownDisplay deadline={challenge.confirmation_deadline} label="Auto-confirms in" />
+          </Card>
+        )}
+        {challenge.status === 'time_pending_confirm' && challenge.confirmation_deadline && isConfirmingTeam && (
           <Card className="bg-orange-500/10 border-orange-500/30 p-4 col-span-2 sm:col-span-1">
             <CountdownDisplay deadline={challenge.confirmation_deadline} label="Auto-confirms in" />
           </Card>
@@ -905,7 +964,7 @@ export default function ChallengeDetailPage() {
         <Card className="bg-slate-800/60 border-slate-700/50 p-6 space-y-5">
           <div>
             <h3 className="font-semibold text-white text-lg mb-1">Respond to Challenge</h3>
-            <p className="text-slate-400 text-sm">Choose how you want to handle the match time.</p>
+            <p className="text-slate-400 text-sm">Coordinate with the other team and agree on a date and time that works for both sides.</p>
           </div>
 
           {/* Option picker */}
@@ -993,13 +1052,6 @@ export default function ChallengeDetailPage() {
                 <p className="text-sm text-slate-300">Accepting without a slot — you'll enter the agreed time later.</p>
                 <button onClick={() => setAcceptOption(null)} className="text-xs text-slate-500 hover:text-slate-300 shrink-0 ml-2">← Back</button>
               </div>
-              <p className="text-xs text-slate-500">Their suggested slots (for reference when coordinating over WhatsApp):</p>
-              {slots.map((slot, i) => (
-                <div key={slot} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-700/20 border border-slate-700/40 text-xs text-slate-400">
-                  <span className="text-slate-600">Slot {i + 1}</span><span>·</span>
-                  {new Date(slot).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} at {new Date(slot).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })}
-                </div>
-              ))}
               <Button onClick={handleAccept} disabled={actionLoading} className="w-full bg-blue-500 hover:bg-blue-600 h-11">
                 {actionLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Check className="h-4 w-4 mr-2" />}
                 Accept — I'll enter the time later
@@ -1044,16 +1096,7 @@ export default function ChallengeDetailPage() {
             <label className="text-sm font-medium text-slate-300 block mb-1.5">
               Venue <span className="text-red-400">*</span>
             </label>
-            <select value={setTimeVenueId} onChange={e => setSetTimeVenueId(e.target.value)}
-              className={`w-full bg-slate-700 border rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500 h-11 ${
-                !setTimeVenueId ? 'border-slate-600' : 'border-emerald-500/60'
-              }`}>
-              <option value="">Select a venue</option>
-              {venues.map(v => <option key={v.id} value={v.id}>{v.name}{v.address ? ` — ${v.address}` : ''}</option>)}
-            </select>
-            {venues.length === 0 && (
-              <p className="text-xs text-slate-500 mt-1">No venues configured — contact admin</p>
-            )}
+            <VenuePicker venueList={venues} value={setTimeVenueId} onChange={setSetTimeVenueId} />
           </div>
           <Button
             onClick={handleSetTime}
@@ -1179,15 +1222,15 @@ export default function ChallengeDetailPage() {
         </Card>
       )}
 
-      {/* ── TIME_PENDING_CONFIRM: Challenging team — confirm or dispute entered time ── */}
-      {challenge.status === 'time_pending_confirm' && isChallengingTeam && (
+      {/* ── TIME_PENDING_CONFIRM: Confirming team — confirm or dispute entered time ── */}
+      {challenge.status === 'time_pending_confirm' && isConfirmingTeam && (
         <Card className="bg-slate-800/60 border-orange-500/30 p-6 space-y-4">
           <div className="flex items-center gap-2">
             <Clock className="h-5 w-5 text-orange-400" />
             <h3 className="font-semibold text-white">Confirm Agreed Match Time</h3>
           </div>
           <p className="text-slate-400 text-sm">
-            {challenge.challenged_team?.name} has entered the agreed match time. Please confirm it matches what you arranged, or dispute it if something is different.
+            <span className="text-white font-medium">{submittingTeamName}</span> has entered the agreed match time. Please confirm it matches what you arranged, or dispute it if something is different.
           </p>
 
           <div className="p-4 bg-slate-700/40 border border-slate-600 rounded-lg space-y-3">
@@ -1249,15 +1292,15 @@ export default function ChallengeDetailPage() {
         </Card>
       )}
 
-      {/* ── TIME_PENDING_CONFIRM: Waiting message for challenged team ── */}
-      {challenge.status === 'time_pending_confirm' && isChallengedTeam && (
+      {/* ── TIME_PENDING_CONFIRM: Waiting message for the team that submitted ── */}
+      {challenge.status === 'time_pending_confirm' && isSubmittingTeam && (
         <Card className="bg-orange-500/10 border-orange-500/30 p-6">
           <div className="flex items-start gap-3">
             <Clock className="h-5 w-5 text-orange-400 flex-shrink-0 mt-0.5" />
             <div>
               <p className="font-semibold text-orange-300 mb-1">Waiting for Confirmation</p>
               <p className="text-orange-200/80 text-sm">
-                {challenge.challenging_team?.name} needs to confirm the time you entered. It auto-confirms if they don't respond before the deadline.
+                You entered the time — the other team needs to confirm it. It auto-confirms if they don't respond before the deadline.
               </p>
               {challenge.confirmed_time && (
                 <p className="text-orange-200 text-sm mt-2 font-medium">
@@ -1298,16 +1341,7 @@ export default function ChallengeDetailPage() {
               {addVenuesList.length === 0 ? (
                 <p className="text-slate-500 text-sm">No venues configured — ask an admin to add venues.</p>
               ) : (
-                <select
-                  value={addVenueId}
-                  onChange={e => setAddVenueId(e.target.value)}
-                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500 h-10"
-                >
-                  <option value="">Select venue...</option>
-                  {addVenuesList.map(v => (
-                    <option key={v.id} value={v.id}>{v.name}{v.address ? ` — ${v.address}` : ''}</option>
-                  ))}
-                </select>
+                <VenuePicker venueList={addVenuesList} value={addVenueId} onChange={setAddVenueId} />
               )}
               <div className="flex gap-2">
                 <Button
@@ -1421,16 +1455,13 @@ export default function ChallengeDetailPage() {
                 <label className="text-xs font-medium text-slate-300 block mb-1.5">
                   New venue <span className="text-slate-500 font-normal">(optional — leave blank to keep current)</span>
                 </label>
-                <select
+                <VenuePicker
+                  venueList={venues}
                   value={rescheduleVenueId}
-                  onChange={e => setRescheduleVenueId(e.target.value)}
-                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500 h-11"
-                >
-                  <option value="">Keep current venue</option>
-                  {venues.map(v => (
-                    <option key={v.id} value={v.id}>{v.name}{v.address ? ` — ${v.address}` : ''}</option>
-                  ))}
-                </select>
+                  onChange={setRescheduleVenueId}
+                  allowEmpty
+                  emptyLabel="Keep current venue"
+                />
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-300 block mb-1.5">
@@ -1660,10 +1691,10 @@ export default function ChallengeDetailPage() {
         const hasActiveDispute = !!(mr.disputed_at && !mr.dispute_resolved_at)
         const isFlaggedForAdmin = !!(mr.dispute_flagged_at && !mr.dispute_resolved_at)
 
-        // Who can verify: non-reporter, not yet disputed or verified
-        const canVerify = !mr.verified_at && !mr.auto_verified && !mr.disputed_at && !isReporter && challenge.status === 'played'
-        // Who can dispute: non-reporter, not yet disputed, not yet verified
-        const canDispute = !mr.verified_at && !mr.auto_verified && !mr.disputed_at && !isReporter && challenge.status === 'played'
+        // Who can verify: must be involved, non-reporter, not yet disputed or verified
+        const canVerify = isInvolved && !mr.verified_at && !mr.auto_verified && !mr.disputed_at && !isReporter && challenge.status === 'result_pending'
+        // Who can dispute: must be involved, non-reporter, not yet disputed, not yet verified
+        const canDispute = isInvolved && !mr.verified_at && !mr.auto_verified && !mr.disputed_at && !isReporter && challenge.status === 'result_pending'
         // Reporter can accept disputed score
         const canAcceptDispute = hasActiveDispute && isReporter && !isFlaggedForAdmin
 
@@ -1747,57 +1778,70 @@ export default function ChallengeDetailPage() {
               )}
             </div>
 
-            {/* ── No active dispute: show submitted score ── */}
-            {!hasActiveDispute && (
-              <ScoreDisplay
-                scores={{
-                  set1_challenger: mr.set1_challenger,
-                  set1_challenged: mr.set1_challenged,
-                  set2_challenger: mr.set2_challenger,
-                  set2_challenged: mr.set2_challenged,
-                  supertiebreak_challenger: mr.supertiebreak_challenger,
-                  supertiebreak_challenged: mr.supertiebreak_challenged,
-                  winner_team_id: mr.winner_team_id,
-                }}
-                label={isVerified ? 'Final Score' : `Reported by ${mr.reported_by_team_id === challenge.challenging_team_id ? challenge.challenging_team?.name : challenge.challenged_team?.name}`}
-                variant={isVerified ? 'final' : 'original'}
-              />
-            )}
+            {/* ── Score content: only visible to participants until verified ── */}
+            {(isVerified || isInvolved) ? (
+              <>
+                {/* No active dispute: show submitted score */}
+                {!hasActiveDispute && (
+                  <ScoreDisplay
+                    scores={{
+                      set1_challenger: mr.set1_challenger,
+                      set1_challenged: mr.set1_challenged,
+                      set2_challenger: mr.set2_challenger,
+                      set2_challenged: mr.set2_challenged,
+                      supertiebreak_challenger: mr.supertiebreak_challenger,
+                      supertiebreak_challenged: mr.supertiebreak_challenged,
+                      winner_team_id: mr.winner_team_id,
+                    }}
+                    label={isVerified ? 'Final Score' : `Reported by ${mr.reported_by_team_id === challenge.challenging_team_id ? challenge.challenging_team?.name : challenge.challenged_team?.name}`}
+                    variant={isVerified ? 'final' : 'original'}
+                  />
+                )}
 
-            {/* ── Active dispute: show both versions side by side ── */}
-            {hasActiveDispute && mr.disputed_score && (
-              <div className="space-y-3">
-                <ScoreDisplay
-                  scores={{
-                    set1_challenger: mr.set1_challenger,
-                    set1_challenged: mr.set1_challenged,
-                    set2_challenger: mr.set2_challenger,
-                    set2_challenged: mr.set2_challenged,
-                    supertiebreak_challenger: mr.supertiebreak_challenger,
-                    supertiebreak_challenged: mr.supertiebreak_challenged,
-                    winner_team_id: mr.winner_team_id,
-                  }}
-                  label={`Originally reported by ${mr.reported_by_team_id === challenge.challenging_team_id ? challenge.challenging_team?.name : challenge.challenged_team?.name}`}
-                  variant="original"
-                />
-                <div className="flex items-center gap-2">
-                  <div className="h-px flex-1 bg-orange-500/30" />
-                  <span className="text-xs text-orange-400 font-semibold">DISPUTED — COUNTER-SCORE</span>
-                  <div className="h-px flex-1 bg-orange-500/30" />
-                </div>
-                <ScoreDisplay
-                  scores={{
-                    set1_challenger: mr.disputed_score.set1_challenger,
-                    set1_challenged: mr.disputed_score.set1_challenged,
-                    set2_challenger: mr.disputed_score.set2_challenger,
-                    set2_challenged: mr.disputed_score.set2_challenged,
-                    supertiebreak_challenger: mr.disputed_score.supertiebreak_challenger,
-                    supertiebreak_challenged: mr.disputed_score.supertiebreak_challenged,
-                    winner_team_id: mr.disputed_score.winner_team_id,
-                  }}
-                  label={`Counter-score by ${mr.reported_by_team_id === challenge.challenging_team_id ? challenge.challenged_team?.name : challenge.challenging_team?.name}`}
-                  variant="disputed"
-                />
+                {/* Active dispute: show both versions side by side */}
+                {hasActiveDispute && mr.disputed_score && (
+                  <div className="space-y-3">
+                    <ScoreDisplay
+                      scores={{
+                        set1_challenger: mr.set1_challenger,
+                        set1_challenged: mr.set1_challenged,
+                        set2_challenger: mr.set2_challenger,
+                        set2_challenged: mr.set2_challenged,
+                        supertiebreak_challenger: mr.supertiebreak_challenger,
+                        supertiebreak_challenged: mr.supertiebreak_challenged,
+                        winner_team_id: mr.winner_team_id,
+                      }}
+                      label={`Originally reported by ${mr.reported_by_team_id === challenge.challenging_team_id ? challenge.challenging_team?.name : challenge.challenged_team?.name}`}
+                      variant="original"
+                    />
+                    <div className="flex items-center gap-2">
+                      <div className="h-px flex-1 bg-orange-500/30" />
+                      <span className="text-xs text-orange-400 font-semibold">DISPUTED — COUNTER-SCORE</span>
+                      <div className="h-px flex-1 bg-orange-500/30" />
+                    </div>
+                    <ScoreDisplay
+                      scores={{
+                        set1_challenger: mr.disputed_score.set1_challenger,
+                        set1_challenged: mr.disputed_score.set1_challenged,
+                        set2_challenger: mr.disputed_score.set2_challenger,
+                        set2_challenged: mr.disputed_score.set2_challenged,
+                        supertiebreak_challenger: mr.disputed_score.supertiebreak_challenger,
+                        supertiebreak_challenged: mr.disputed_score.supertiebreak_challenged,
+                        winner_team_id: mr.disputed_score.winner_team_id,
+                      }}
+                      label={`Counter-score by ${mr.reported_by_team_id === challenge.challenging_team_id ? challenge.challenged_team?.name : challenge.challenging_team?.name}`}
+                      variant="disputed"
+                    />
+                  </div>
+                )}
+              </>
+            ) : (
+              /* Third-party view: score hidden until verified */
+              <div className="flex items-center gap-3 p-4 bg-slate-100 dark:bg-slate-700/30 border border-slate-200 dark:border-slate-600/40 rounded-xl">
+                <Lock className="h-4 w-4 text-slate-400 shrink-0" />
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Score is hidden until both teams have verified the result.
+                </p>
               </div>
             )}
 

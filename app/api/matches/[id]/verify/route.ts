@@ -65,6 +65,12 @@ export async function POST(
       result.loser_team_id
     )
 
+    // Mark challenge as fully played — unlocks both teams for new challenges
+    await adminClient
+      .from('challenges')
+      .update({ status: 'played' })
+      .eq('id', result.challenge_id)
+
     await logChallengeEvent({
       challengeId: result.challenge_id,
       eventType: 'result_verified',
@@ -73,48 +79,57 @@ export async function POST(
       data: { verifying_team_id: teamId },
     })
 
-    // Notify both teams about the verified result
-    const [{ data: winnerTeam }, { data: loserTeam }] = await Promise.all([
-      adminClient.from('teams')
-        .select('name, player1:players!player1_id(id,name), player2:players!player2_id(id,name)')
-        .eq('id', result.winner_team_id).single(),
-      adminClient.from('teams')
-        .select('name, player1:players!player1_id(id,name), player2:players!player2_id(id,name)')
-        .eq('id', result.loser_team_id).single(),
-    ])
-
+    // Respond immediately — notifications are fire-and-forget
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    const challengeUrl = `${appUrl}/challenges/${result.challenge_id}`
+    const challengeUrl = `${appUrl}/challenges/${result.challenge_id}`;
 
-    if (winnerTeam) {
-      for (const player of [(winnerTeam as any).player1, (winnerTeam as any).player2]) {
-        if (!player) continue
-        await createNotification({
-          playerId: player.id,
-          teamId: result.winner_team_id,
-          type: 'result_verified',
-          title: '✅ Match result verified',
-          message: `Your win against ${(loserTeam as any)?.name ?? 'the opposing team'} has been confirmed. The ladder has been updated.`,
-          actionUrl: challengeUrl,
-          sendEmail: true,
-        })
-      }
-    }
+    // Fetch both teams then fan-out all 4 notifications in parallel (non-blocking)
+    (async () => {
+      try {
+        const [{ data: winnerTeam }, { data: loserTeam }] = await Promise.all([
+          adminClient.from('teams')
+            .select('name, player1:players!player1_id(id,name), player2:players!player2_id(id,name)')
+            .eq('id', result.winner_team_id).single(),
+          adminClient.from('teams')
+            .select('name, player1:players!player1_id(id,name), player2:players!player2_id(id,name)')
+            .eq('id', result.loser_team_id).single(),
+        ])
 
-    if (loserTeam) {
-      for (const player of [(loserTeam as any).player1, (loserTeam as any).player2]) {
-        if (!player) continue
-        await createNotification({
-          playerId: player.id,
-          teamId: result.loser_team_id,
-          type: 'result_verified',
-          title: '✅ Match result confirmed',
-          message: `The result of your match against ${(winnerTeam as any)?.name ?? 'the opposing team'} has been confirmed.`,
-          actionUrl: challengeUrl,
-          sendEmail: true,
-        })
-      }
-    }
+        const notifs: Promise<unknown>[] = []
+
+        if (winnerTeam) {
+          for (const player of [(winnerTeam as any).player1, (winnerTeam as any).player2]) {
+            if (!player) continue
+            notifs.push(createNotification({
+              playerId: player.id,
+              teamId: result.winner_team_id,
+              type: 'result_verified',
+              title: '✅ Match result verified',
+              message: `Your win against ${(loserTeam as any)?.name ?? 'the opposing team'} has been confirmed. The ladder has been updated.`,
+              actionUrl: challengeUrl,
+              sendEmail: true,
+            }))
+          }
+        }
+
+        if (loserTeam) {
+          for (const player of [(loserTeam as any).player1, (loserTeam as any).player2]) {
+            if (!player) continue
+            notifs.push(createNotification({
+              playerId: player.id,
+              teamId: result.loser_team_id,
+              type: 'result_verified',
+              title: '✅ Match result confirmed',
+              message: `The result of your match against ${(winnerTeam as any)?.name ?? 'the opposing team'} has been confirmed.`,
+              actionUrl: challengeUrl,
+              sendEmail: true,
+            }))
+          }
+        }
+
+        await Promise.all(notifs)
+      } catch { /* fire-and-forget — never blocks response */ }
+    })()
 
     return NextResponse.json({ success: true, message: 'Result verified and ladder updated' })
 
