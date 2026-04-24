@@ -8,6 +8,10 @@ import { useChat } from '@/context/ChatContext'
 
 export function BottomNav() {
   const pathname = usePathname()
+
+  // Hide on chat thread pages — the chat has its own full-screen layout with
+  // a back button, and the bottom nav causes keyboard-push issues on iOS PWA.
+  if (pathname.startsWith('/chat/')) return null
   const { totalUnread } = useChat()
 
   const tabs = [

@@ -495,13 +495,13 @@ export default function ChatThreadPage() {
   const isClosed = matchInfo ? ['played', 'forfeited', 'dissolved'].includes(matchInfo.status) : false
 
   return (
-    // Fixed positioning escapes pwa-main padding so the chat fills exactly the
-    // space between the sticky navbar and the fixed bottom nav.
+    // Fixed, full-height — bottom nav is hidden on this page so we go edge-to-edge.
+    // The input bar's own padding handles safe-area-inset-bottom.
     <div
       className="fixed left-0 right-0 flex flex-col bg-slate-50 dark:bg-slate-950 overflow-hidden"
       style={{
         top:    'calc(3.5rem + env(safe-area-inset-top, 0px))',
-        bottom: 'calc(4rem + env(safe-area-inset-bottom, 0px))',
+        bottom: '0px',
       }}
     >
 
@@ -839,13 +839,15 @@ export default function ChatThreadPage() {
 
           {/* ── Input bar / closed banner ── */}
           {isClosed ? (
-            <div className="shrink-0 px-4 py-3 bg-slate-100 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-700/50 text-center">
+            <div className="shrink-0 px-4 pt-3 bg-slate-100 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-700/50 text-center"
+              style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0.75rem))' }}>
               <p className="text-xs text-slate-400 dark:text-slate-500">
                 This conversation has ended · {matchInfo ? statusLabel(matchInfo.status) : ''}
               </p>
             </div>
           ) : (
-            <div className="shrink-0 px-3 py-2.5 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700/50">
+            <div className="shrink-0 px-3 pt-2.5 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700/50"
+              style={{ paddingBottom: 'max(0.625rem, env(safe-area-inset-bottom, 0.625rem))' }}>
               <form onSubmit={handleSend} className="flex items-end gap-2">
                 <textarea
                   ref={inputRef}
