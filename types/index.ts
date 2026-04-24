@@ -351,10 +351,18 @@ export interface ChatMessage {
   content: string
   read_by: string[]
   created_at: string
+  reply_to_message_id?: string | null
+  reactions?: Record<string, string[]>
   // Joined sender info
   sender?: {
     id: string
     name: string
     avatar_url?: string | null
   }
+  // Joined reply-to message (when reply_to_message_id is set)
+  reply_to?: {
+    id: string
+    content: string
+    sender?: { id: string; name: string } | null
+  } | null
 }

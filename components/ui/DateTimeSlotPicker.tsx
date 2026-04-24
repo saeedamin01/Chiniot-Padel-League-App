@@ -112,6 +112,7 @@ export function DateTimeSlotPicker({
         min={minDate}
         disabled={disabled}
         onChange={e => onDateChange(e.target.value)}
+        lang="en-GB"
         className={
           'flex-1 min-w-0 bg-slate-700 border border-slate-600 rounded-lg px-3 ' +
           'text-white text-sm focus:outline-none focus:border-emerald-500 h-10 ' +

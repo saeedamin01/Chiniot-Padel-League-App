@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { TierBadge } from '@/components/ui/tier-badge'
 import type { Team, LadderPosition, Challenge, MatchResult } from '@/types'
 import { useTeam } from '@/context/TeamContext'
+import { useChat } from '@/context/ChatContext'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -189,6 +190,7 @@ export default function DashboardPage() {
   const supabase = createClient()
   const router = useRouter()
   const { activeTeam, teams, switchTeam, seasonId, refresh: refreshTeam } = useTeam()
+  const { unreadByChallengeId } = useChat()
   const selectedTeamId = activeTeam?.id ?? null
 
   const [loading, setLoading]               = useState(true)
@@ -581,18 +583,30 @@ export default function DashboardPage() {
     )
   }
 
-  const OpenChatBtn = ({ id }: { id: string }) => (
-    <button
-      onClick={() => openChat(id)}
-      disabled={chatLoading === id}
-      className="flex items-center gap-1.5 justify-center text-xs text-slate-400 hover:text-emerald-400 dark:hover:text-emerald-400 transition-colors mt-2 w-full py-0.5"
-    >
-      {chatLoading === id
-        ? <Loader2 className="h-3 w-3 animate-spin" />
-        : <MessageCircle className="h-3 w-3" />}
-      Open Chat
-    </button>
-  )
+  const OpenChatBtn = ({ id }: { id: string }) => {
+    const unread = unreadByChallengeId[id] ?? 0
+    return (
+      <button
+        onClick={() => openChat(id)}
+        disabled={chatLoading === id}
+        className="flex items-center gap-1.5 justify-center text-xs text-slate-400 hover:text-emerald-400 dark:hover:text-emerald-400 transition-colors mt-2 w-full py-0.5"
+      >
+        {chatLoading === id
+          ? <Loader2 className="h-3 w-3 animate-spin" />
+          : (
+            <span className="relative">
+              <MessageCircle className="h-3 w-3" />
+              {unread > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] px-0.5 rounded-full bg-emerald-500 text-white text-[9px] font-bold flex items-center justify-center">
+                  {unread > 9 ? '9+' : unread}
+                </span>
+              )}
+            </span>
+          )}
+        Open Chat{unread > 0 ? ` (${unread})` : ''}
+      </button>
+    )
+  }
 
   const fmtDate = (iso: string | null | undefined) => {
     if (!iso) return '—'
@@ -1147,9 +1161,16 @@ export default function DashboardPage() {
                           <Flag className="h-3.5 w-3.5" />Score
                         </Button>
                       )}
-                      <Button size="sm" variant="outline" className="text-xs h-9 gap-1 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
+                      <Button size="sm" variant="outline" className="text-xs h-9 gap-1 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 relative"
                         onClick={() => openChat(c.id)} disabled={chatLoading === c.id}>
-                        {chatLoading === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <MessageCircle className="h-3.5 w-3.5" />}
+                        {chatLoading === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : (
+                          <span className="relative">
+                            <MessageCircle className="h-3.5 w-3.5" />
+                            {(unreadByChallengeId[c.id] ?? 0) > 0 && (
+                              <span className="absolute -top-1.5 -right-1.5 min-w-[13px] h-[13px] px-0.5 rounded-full bg-emerald-500 text-white text-[8px] font-bold flex items-center justify-center">{unreadByChallengeId[c.id] > 9 ? '9+' : unreadByChallengeId[c.id]}</span>
+                            )}
+                          </span>
+                        )}
                         Chat
                       </Button>
                       <Link href={`/challenges/${c.id}`}>
@@ -1222,7 +1243,7 @@ export default function DashboardPage() {
                     </Link>
                     <button onClick={() => openChat(c.id)} disabled={chatLoading === c.id}
                       className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors">
-                      {chatLoading === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <MessageCircle className="h-3 w-3" />}
+                      {chatLoading === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : (<span className="relative"><MessageCircle className="h-3 w-3" />{(unreadByChallengeId[c.id] ?? 0) > 0 && (<span className="absolute -top-1.5 -right-1.5 min-w-[13px] h-[13px] px-0.5 rounded-full bg-emerald-500 text-white text-[8px] font-bold flex items-center justify-center">{unreadByChallengeId[c.id] > 9 ? '9+' : unreadByChallengeId[c.id]}</span>)}</span>)}
                       Chat
                     </button>
                   </div>
@@ -1252,7 +1273,7 @@ export default function DashboardPage() {
                     </Link>
                     <button onClick={() => openChat(c.id)} disabled={chatLoading === c.id}
                       className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors">
-                      {chatLoading === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <MessageCircle className="h-3 w-3" />}
+                      {chatLoading === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : (<span className="relative"><MessageCircle className="h-3 w-3" />{(unreadByChallengeId[c.id] ?? 0) > 0 && (<span className="absolute -top-1.5 -right-1.5 min-w-[13px] h-[13px] px-0.5 rounded-full bg-emerald-500 text-white text-[8px] font-bold flex items-center justify-center">{unreadByChallengeId[c.id] > 9 ? '9+' : unreadByChallengeId[c.id]}</span>)}</span>)}
                       Chat
                     </button>
                   </div>
@@ -1285,7 +1306,7 @@ export default function DashboardPage() {
                     </Link>
                     <button onClick={() => openChat(c.id)} disabled={chatLoading === c.id}
                       className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors">
-                      {chatLoading === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <MessageCircle className="h-3 w-3" />}
+                      {chatLoading === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : (<span className="relative"><MessageCircle className="h-3 w-3" />{(unreadByChallengeId[c.id] ?? 0) > 0 && (<span className="absolute -top-1.5 -right-1.5 min-w-[13px] h-[13px] px-0.5 rounded-full bg-emerald-500 text-white text-[8px] font-bold flex items-center justify-center">{unreadByChallengeId[c.id] > 9 ? '9+' : unreadByChallengeId[c.id]}</span>)}</span>)}
                       Chat
                     </button>
                   </div>
@@ -1319,7 +1340,7 @@ export default function DashboardPage() {
                     </Link>
                     <button onClick={() => openChat(c.id)} disabled={chatLoading === c.id}
                       className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors">
-                      {chatLoading === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <MessageCircle className="h-3 w-3" />}
+                      {chatLoading === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : (<span className="relative"><MessageCircle className="h-3 w-3" />{(unreadByChallengeId[c.id] ?? 0) > 0 && (<span className="absolute -top-1.5 -right-1.5 min-w-[13px] h-[13px] px-0.5 rounded-full bg-emerald-500 text-white text-[8px] font-bold flex items-center justify-center">{unreadByChallengeId[c.id] > 9 ? '9+' : unreadByChallengeId[c.id]}</span>)}</span>)}
                       Chat
                     </button>
                   </div>

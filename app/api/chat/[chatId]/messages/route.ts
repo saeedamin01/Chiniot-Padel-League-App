@@ -25,7 +25,8 @@ export async function POST(
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { content } = await request.json()
+    const body = await request.json()
+    const { content, reply_to_message_id } = body
     if (!content || typeof content !== 'string' || content.trim().length === 0) {
       return NextResponse.json({ error: 'Message content is required' }, { status: 400 })
     }
@@ -63,20 +64,25 @@ export async function POST(
     }
 
     // ── Insert message ────────────────────────────────────────────────────────
+    const insertData: Record<string, unknown> = {
+      chat_id:   chatId,
+      sender_id: user.id,
+      content:   content.trim(),
+      read_by:   [user.id],  // sender has already "read" their own message
+    }
+    if (reply_to_message_id) insertData.reply_to_message_id = reply_to_message_id
+
     const { data: message, error: insertErr } = await adminClient
       .from('chat_messages')
-      .insert({
-        chat_id:   chatId,
-        sender_id: user.id,
-        content:   content.trim(),
-        read_by:   [user.id],  // sender has already "read" their own message
-      })
+      .insert(insertData)
       .select(`
         id,
         chat_id,
         sender_id,
         content,
         read_by,
+        reactions,
+        reply_to_message_id,
         created_at,
         sender:players!chat_messages_sender_id_fkey ( id, name, avatar_url )
       `)

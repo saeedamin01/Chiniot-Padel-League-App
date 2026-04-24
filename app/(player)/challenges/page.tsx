@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useTeam } from '@/context/TeamContext'
+import { useChat } from '@/context/ChatContext'
 import { toast } from 'sonner'
 import { Clock, Zap, X, MapPin, Calendar, Ticket, AlertTriangle, ChevronRight, Trophy, Shield, CheckCircle, Loader2, TrendingUp, MessageCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -54,6 +55,7 @@ export default function ChallengesPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { activeTeam } = useTeam()
+  const { unreadByChallengeId } = useChat()
 
   // Ticket type from URL — set by the ladder's challenge button for ticket challenges.
   // null means this is a normal challenge that doesn't require a ticket.
@@ -257,10 +259,17 @@ export default function ChallengesPage() {
   function validateSlots(s1: string, s2: string, s3: string): string | null {
     const slots = [s1, s2, s3].map(s => new Date(s))
 
+    // Invalid date check — catches bad year entry like 252026
+    for (const [i, d] of slots.entries()) {
+      if (isNaN(d.getTime())) {
+        return `Slot ${i + 1} has an invalid date — please check the date and try again.`
+      }
+    }
+
     // 30-minute boundary check
     for (const [i, d] of slots.entries()) {
       if (d.getMinutes() % 30 !== 0) {
-        return `Slot ${i + 1} must be on a :00 or :30 minute boundary (e.g. 18:00 or 18:30).`
+        return `Slot ${i + 1} must be on a :00 or :30 minute boundary (e.g. 6:00 PM or 6:30 PM).`
       }
     }
 
@@ -549,7 +558,7 @@ export default function ChallengesPage() {
             disabled={chatLoading === challenge.id}
             className="flex items-center gap-1.5 justify-center text-xs text-slate-400 hover:text-emerald-400 transition-colors mt-1 w-full py-0.5"
           >
-            {chatLoading === challenge.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <MessageCircle className="h-3 w-3" />}
+            {chatLoading === challenge.id ? <Loader2 className="h-3 w-3 animate-spin" /> : (<span className="relative"><MessageCircle className="h-3 w-3" />{(unreadByChallengeId[challenge.id] ?? 0) > 0 && (<span className="absolute -top-1.5 -right-1.5 min-w-[13px] h-[13px] px-0.5 rounded-full bg-emerald-500 text-white text-[8px] font-bold flex items-center justify-center">{unreadByChallengeId[challenge.id] > 9 ? '9+' : unreadByChallengeId[challenge.id]}</span>)}</span>)}
             Open Chat
           </button>
         )}

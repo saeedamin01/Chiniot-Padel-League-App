@@ -99,7 +99,7 @@ export default function AuditPage() {
         ['Timestamp', 'Admin', 'Action', 'Entity Type', 'Entity ID', 'Notes'].join(','),
         ...data.map((log) =>
           [
-            new Date(log.created_at).toLocaleString(),
+            new Date(log.created_at).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }),
             log.actor_email,
             log.action_type,
             log.entity_type,

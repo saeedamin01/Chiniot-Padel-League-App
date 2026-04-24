@@ -1,37 +1,28 @@
 'use client'
 
 import React, {
-  useEffect,
-  useState,
-  useRef,
-  useCallback,
-  FormEvent,
+  useEffect, useState, useRef, useCallback, FormEvent, TouchEvent,
 } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useChat } from '@/context/ChatContext'
 import {
-  ArrowLeft,
-  Loader2,
-  Send,
-  MessageCircle,
-  Calendar,
-  Clock,
-  MapPin,
-  ChevronDown,
-  ChevronUp,
-  AlertTriangle,
-  CheckCircle2,
-  XCircle,
+  ArrowLeft, Loader2, Send, X, Reply,
+  Calendar, Clock, MapPin, Info,
 } from 'lucide-react'
 import type { ChatMessage, ChallengeChat, ChallengeStatus } from '@/types'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { format, isToday, isYesterday } from 'date-fns'
 
-// ─── Match info types ─────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const REACTIONS = ['👍', '❤️', '😂', '😮', '🎉']
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface MatchInfo {
+  challengeId: string
+  challengeCode: string
   status: ChallengeStatus
   accept_deadline: string | null
   match_deadline: string | null
@@ -43,84 +34,136 @@ interface MatchInfo {
   match_location: string | null
   venue_name: string | null
   venue_address: string | null
+  challenging_team_name: string | null
+  challenged_team_name: string | null
+  challenging_team_id: string | null
+  challenged_team_id: string | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatTimestamp(iso: string): string {
-  const d = new Date(iso)
-  if (isToday(d))     return format(d, 'h:mm a')
-  if (isYesterday(d)) return `Yesterday ${format(d, 'h:mm a')}`
-  return format(d, 'd MMM, h:mm a')
+function msgTime(iso: string) {
+  return format(new Date(iso), 'h:mm a')
 }
 
-function dateSeparatorLabel(iso: string): string {
+function dateSeparatorLabel(iso: string) {
   const d = new Date(iso)
   if (isToday(d))     return 'Today'
   if (isYesterday(d)) return 'Yesterday'
   return format(d, 'd MMMM yyyy')
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+function fmtDt(iso: string | null | undefined) {
+  if (!iso) return null
+  return new Date(iso).toLocaleString('en-GB', {
+    weekday: 'short', day: 'numeric', month: 'short',
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  })
+}
+
+function statusLabel(s: ChallengeStatus) {
+  const map: Partial<Record<ChallengeStatus, string>> = {
+    pending: 'Pending acceptance',
+    accepted: 'Accepted — confirming time',
+    accepted_open: 'Accepted — entering time',
+    time_pending_confirm: 'Time proposed — awaiting confirmation',
+    revision_proposed: 'Revision proposed',
+    reschedule_requested: 'Reschedule requested',
+    reschedule_pending_admin: 'Reschedule with admin',
+    scheduled: 'Scheduled',
+    result_pending: 'Awaiting result verification',
+    played: 'Match completed',
+    forfeited: 'Forfeited',
+    dissolved: 'Dissolved',
+  }
+  return map[s] ?? s
+}
+
+function initials(name: string) {
+  return name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('')
+}
+
+// ─── Avatar ───────────────────────────────────────────────────────────────────
+
+function Avatar({ name, size = 'sm' }: { name: string; size?: 'sm' | 'md' }) {
+  const sz = size === 'sm' ? 'w-7 h-7 text-[10px]' : 'w-9 h-9 text-xs'
+  return (
+    <div className={`${sz} rounded-full bg-emerald-600 flex items-center justify-center text-white font-semibold shrink-0`}>
+      {initials(name)}
+    </div>
+  )
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export default function ChatThreadPage() {
-  const params     = useParams()
-  const router     = useRouter()
-  const chatId     = params.chatId as string
-  const supabase   = createClient()
+  const params   = useParams()
+  const router   = useRouter()
+  const chatId   = params.chatId as string
+  const supabase = createClient()
   const { refresh: refreshUnread } = useChat()
 
-  const [userId,    setUserId]    = useState<string | null>(null)
-  const [chat,      setChat]      = useState<ChallengeChat | null>(null)
-  const [messages,  setMessages]  = useState<ChatMessage[]>([])
-  const [loading,   setLoading]   = useState(true)
-  const [sending,   setSending]   = useState(false)
-  const [content,   setContent]   = useState('')
-  const [forbidden, setForbidden] = useState(false)
-  const [matchInfo, setMatchInfo] = useState<MatchInfo | null>(null)
-  const [infoOpen,  setInfoOpen]  = useState(false)
+  const [userId,     setUserId]     = useState<string | null>(null)
+  const [chat,       setChat]       = useState<ChallengeChat | null>(null)
+  const [messages,   setMessages]   = useState<ChatMessage[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [sending,    setSending]    = useState(false)
+  const [content,    setContent]    = useState('')
+  const [forbidden,  setForbidden]  = useState(false)
+  const [matchInfo,  setMatchInfo]  = useState<MatchInfo | null>(null)
+  const [activeTab,  setActiveTab]  = useState<'chat' | 'details'>('chat')
+
+  // Reply state
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
+
+  // Reaction picker: messageId whose picker is open
+  const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null)
+
+  // Player name map for "Seen by" display
+  const [playerNames, setPlayerNames] = useState<Record<string, string>>({})
 
   const bottomRef  = useRef<HTMLDivElement>(null)
   const inputRef   = useRef<HTMLTextAreaElement>(null)
   const channelRef = useRef<RealtimeChannel | null>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
 
-  // ── Scroll to bottom ───────────────────────────────────────────────────────
+  // Swipe-to-reply tracking
+  const swipeStartX   = useRef<number>(0)
+  const swipeStartY   = useRef<number>(0)
+  const swipingMsg    = useRef<string | null>(null)
+  const swipeTriggered = useRef(false)
+  const [swipeOffset, setSwipeOffset] = useState<Record<string, number>>({})
+
+  // Long-press tracking
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ── Scroll helpers ─────────────────────────────────────────────────────────
   const scrollToBottom = useCallback((smooth = false) => {
     bottomRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' })
   }, [])
 
-  // ── Mark messages as read ─────────────────────────────────────────────────
+  // ── Mark read ──────────────────────────────────────────────────────────────
   const markRead = useCallback(async () => {
     await supabase.rpc('mark_chat_messages_read', { p_chat_id: chatId })
     refreshUnread()
   }, [supabase, chatId, refreshUnread])
 
-  // ── Initial load ───────────────────────────────────────────────────────────
+  // ── Load chat + messages ───────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
       setUserId(user.id)
 
-      // Fetch chat metadata + full challenge scheduling info
       const { data: chatData, error: chatErr } = await supabase
         .from('challenge_chats')
         .select(`
-          id,
-          challenge_id,
-          allowed_player_ids,
-          last_email_sent_at,
-          created_at,
+          id, challenge_id, allowed_player_ids, last_email_sent_at, created_at,
           challenge:challenges (
-            id,
-            challenge_code,
-            status,
-            accept_deadline,
-            match_deadline,
-            confirmed_time,
-            confirmation_deadline,
-            slot_1, slot_2, slot_3,
-            match_location,
+            id, challenge_code, status,
+            accept_deadline, match_deadline, confirmed_time, confirmation_deadline,
+            slot_1, slot_2, slot_3, match_location,
+            challenging_team_id, challenged_team_id,
             challenging_team:teams!challenges_challenging_team_id_fkey ( id, name ),
             challenged_team:teams!challenges_challenged_team_id_fkey ( id, name ),
             venue:venues!challenges_venue_id_fkey ( id, name, address )
@@ -136,39 +179,71 @@ export default function ChatThreadPage() {
 
       setChat(chatData as unknown as ChallengeChat)
 
-      // Extract match info
       const ch = chatData.challenge as any
       if (ch) {
         const venueRaw = Array.isArray(ch.venue) ? ch.venue[0] : ch.venue
+        const cTeam = Array.isArray(ch.challenging_team) ? ch.challenging_team[0] : ch.challenging_team
+        const dTeam = Array.isArray(ch.challenged_team)  ? ch.challenged_team[0]  : ch.challenged_team
         setMatchInfo({
-          status:                ch.status ?? null,
-          accept_deadline:       ch.accept_deadline ?? null,
-          match_deadline:        ch.match_deadline ?? null,
-          confirmed_time:        ch.confirmed_time ?? null,
-          confirmation_deadline: ch.confirmation_deadline ?? null,
-          slot_1:                ch.slot_1 ?? null,
-          slot_2:                ch.slot_2 ?? null,
-          slot_3:                ch.slot_3 ?? null,
-          match_location:        ch.match_location ?? null,
-          venue_name:            venueRaw?.name ?? null,
-          venue_address:         venueRaw?.address ?? null,
+          challengeId:            ch.id,
+          challengeCode:          ch.challenge_code ?? '',
+          status:                 ch.status,
+          accept_deadline:        ch.accept_deadline ?? null,
+          match_deadline:         ch.match_deadline ?? null,
+          confirmed_time:         ch.confirmed_time ?? null,
+          confirmation_deadline:  ch.confirmation_deadline ?? null,
+          slot_1:                 ch.slot_1 ?? null,
+          slot_2:                 ch.slot_2 ?? null,
+          slot_3:                 ch.slot_3 ?? null,
+          match_location:         ch.match_location ?? null,
+          venue_name:             venueRaw?.name ?? null,
+          venue_address:          venueRaw?.address ?? null,
+          challenging_team_name:  cTeam?.name ?? null,
+          challenged_team_name:   dTeam?.name ?? null,
+          challenging_team_id:    ch.challenging_team_id ?? null,
+          challenged_team_id:     ch.challenged_team_id ?? null,
         })
       }
 
-      // Fetch messages
+      // Fetch messages with reply-to content
       const { data: msgs } = await supabase
         .from('chat_messages')
         .select(`
-          id, chat_id, sender_id, content, read_by, created_at,
+          id, chat_id, sender_id, content, read_by, reactions,
+          reply_to_message_id, created_at,
           sender:players!chat_messages_sender_id_fkey ( id, name, avatar_url )
         `)
         .eq('chat_id', chatId)
         .order('created_at', { ascending: true })
 
-      setMessages((msgs ?? []) as unknown as ChatMessage[])
+      const msgsArr = (msgs ?? []) as unknown as ChatMessage[]
+
+      // Build a lookup of message content for reply previews
+      const msgMap: Record<string, ChatMessage> = {}
+      for (const m of msgsArr) msgMap[m.id] = m
+
+      // Attach reply_to inline
+      const enriched = msgsArr.map(m => {
+        if (!m.reply_to_message_id) return m
+        const parent = msgMap[m.reply_to_message_id]
+        return { ...m, reply_to: parent ? { id: parent.id, content: parent.content, sender: parent.sender ?? null } : null }
+      })
+
+      setMessages(enriched)
       setLoading(false)
 
-      // Mark all as read
+      // Build player name map for "Seen by"
+      const playerIds = chatData.allowed_player_ids as string[]
+      const { data: players } = await supabase
+        .from('players')
+        .select('id, name')
+        .in('id', playerIds)
+      if (players) {
+        const map: Record<string, string> = {}
+        for (const p of players) map[p.id] = p.name.split(' ')[0] // first name only
+        setPlayerNames(map)
+      }
+
       await supabase.rpc('mark_chat_messages_read', { p_chat_id: chatId })
       refreshUnread()
     }
@@ -177,65 +252,68 @@ export default function ChatThreadPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId])
 
-  // ── Scroll on initial load ─────────────────────────────────────────────────
   useEffect(() => {
     if (!loading) scrollToBottom(false)
   }, [loading, scrollToBottom])
 
-  // ── Realtime subscription ──────────────────────────────────────────────────
+  // ── Realtime ───────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!userId || loading) return
 
     const channel = supabase
       .channel(`chat-thread-${chatId}`)
-      .on(
-        'postgres_changes',
-        {
-          event:  'INSERT',
-          schema: 'public',
-          table:  'chat_messages',
-          filter: `chat_id=eq.${chatId}`,
-        },
-        async (payload) => {
-          // Fetch full message with sender info
-          const { data: msg } = await supabase
-            .from('chat_messages')
-            .select(`
-              id, chat_id, sender_id, content, read_by, created_at,
-              sender:players!chat_messages_sender_id_fkey ( id, name, avatar_url )
-            `)
-            .eq('id', payload.new.id)
-            .single()
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'chat_messages',
+        filter: `chat_id=eq.${chatId}`,
+      }, async (payload) => {
+        const { data: msg } = await supabase
+          .from('chat_messages')
+          .select(`
+            id, chat_id, sender_id, content, read_by, reactions,
+            reply_to_message_id, created_at,
+            sender:players!chat_messages_sender_id_fkey ( id, name, avatar_url )
+          `)
+          .eq('id', payload.new.id)
+          .single()
 
-          if (msg) {
-            setMessages(prev => {
-              // Deduplicate (optimistic + realtime could race)
-              if (prev.some(m => m.id === msg.id)) return prev
-              return [...prev, msg as unknown as ChatMessage]
-            })
-            scrollToBottom(true)
-
-            // Mark read if incoming from someone else
-            if (msg.sender_id !== userId) {
-              await supabase.rpc('mark_chat_messages_read', { p_chat_id: chatId })
-              refreshUnread()
+        if (msg) {
+          const typedMsg = msg as unknown as ChatMessage
+          setMessages(prev => {
+            if (prev.some(m => m.id === typedMsg.id)) return prev
+            // Attach reply_to if needed
+            let enriched = typedMsg
+            if (typedMsg.reply_to_message_id) {
+              const parent = prev.find(m => m.id === typedMsg.reply_to_message_id)
+              if (parent) enriched = { ...typedMsg, reply_to: { id: parent.id, content: parent.content, sender: parent.sender ?? null } }
             }
+            return [...prev, enriched]
+          })
+          scrollToBottom(true)
+          if (msg.sender_id !== userId) {
+            await supabase.rpc('mark_chat_messages_read', { p_chat_id: chatId })
+            refreshUnread()
           }
         }
-      )
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'chat_messages',
+        filter: `chat_id=eq.${chatId}`,
+      }, (payload) => {
+        // Update reactions and read_by in place
+        setMessages(prev => prev.map(m =>
+          m.id === payload.new.id
+            ? { ...m, reactions: payload.new.reactions, read_by: payload.new.read_by }
+            : m
+        ))
+      })
       .subscribe()
 
     channelRef.current = channel
-
     return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current)
-        channelRef.current = null
-      }
+      if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null }
     }
   }, [chatId, userId, loading, supabase, scrollToBottom, refreshUnread])
 
-  // ── Mark read when tab becomes active ─────────────────────────────────────
   useEffect(() => {
     const handleFocus = () => markRead()
     window.addEventListener('focus', handleFocus)
@@ -248,17 +326,21 @@ export default function ChatThreadPage() {
     const trimmed = content.trim()
     if (!trimmed || sending) return
 
+    const replyingTo = replyTo
     setSending(true)
     setContent('')
+    setReplyTo(null)
 
-    // Optimistic message
     const optimisticId = `opt-${Date.now()}`
     const optimistic: ChatMessage = {
-      id:         optimisticId,
-      chat_id:    chatId,
-      sender_id:  userId!,
-      content:    trimmed,
-      read_by:    [userId!],
+      id: optimisticId,
+      chat_id: chatId,
+      sender_id: userId!,
+      content: trimmed,
+      read_by: [userId!],
+      reactions: {},
+      reply_to_message_id: replyingTo?.id ?? null,
+      reply_to: replyingTo ? { id: replyingTo.id, content: replyingTo.content, sender: replyingTo.sender ?? null } : null,
       created_at: new Date().toISOString(),
       sender: { id: userId!, name: 'You' },
     }
@@ -266,424 +348,495 @@ export default function ChatThreadPage() {
     scrollToBottom(true)
 
     try {
+      const body: Record<string, string> = { content: trimmed }
+      if (replyingTo) body.reply_to_message_id = replyingTo.id
+
       const res = await fetch(`/api/chat/${chatId}/messages`, {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ content: trimmed }),
+        body: JSON.stringify(body),
       })
 
       if (!res.ok) {
-        // Roll back optimistic on error
         setMessages(prev => prev.filter(m => m.id !== optimisticId))
         setContent(trimmed)
-        const err = await res.json()
-        console.error('[Chat] send error', err)
+        setReplyTo(replyingTo)
       } else {
         const { message } = await res.json()
-        // Replace optimistic with real message
-        setMessages(prev =>
-          prev.map(m => (m.id === optimisticId ? (message as ChatMessage) : m))
-        )
+        setMessages(prev => prev.map(m => m.id === optimisticId ? (message as ChatMessage) : m))
       }
-    } catch (err) {
+    } catch {
       setMessages(prev => prev.filter(m => m.id !== optimisticId))
       setContent(trimmed)
-      console.error('[Chat] network error', err)
+      setReplyTo(replyingTo)
     } finally {
       setSending(false)
       inputRef.current?.focus()
     }
   }
 
-  // ── Auto-grow textarea ─────────────────────────────────────────────────────
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
+  // ── React to message ───────────────────────────────────────────────────────
+  const handleReact = async (messageId: string, emoji: string) => {
+    setReactionPickerFor(null)
+    // Optimistic update
+    setMessages(prev => prev.map(m => {
+      if (m.id !== messageId) return m
+      const r: Record<string, string[]> = { ...(m.reactions ?? {}) }
+      const existing = r[emoji] ?? []
+      if (existing.includes(userId!)) {
+        r[emoji] = existing.filter(id => id !== userId!)
+        if (r[emoji].length === 0) delete r[emoji]
+      } else {
+        r[emoji] = [...existing, userId!]
+      }
+      return { ...m, reactions: r }
+    }))
+
+    await fetch(`/api/chat/${chatId}/messages/${messageId}/react`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emoji }),
+    })
+  }
+
+  // ── Touch handlers for swipe-to-reply ─────────────────────────────────────
+  const onTouchStart = (e: TouchEvent<HTMLDivElement>, msgId: string) => {
+    swipeStartX.current   = e.touches[0].clientX
+    swipeStartY.current   = e.touches[0].clientY
+    swipingMsg.current    = msgId
+    swipeTriggered.current = false
+
+    // Long-press → reaction picker
+    longPressTimer.current = setTimeout(() => {
+      setReactionPickerFor(msgId)
+      swipingMsg.current = null
+    }, 500)
+  }
+
+  const onTouchMove = (e: TouchEvent<HTMLDivElement>, msgId: string) => {
+    if (swipingMsg.current !== msgId) return
+    const dx = e.touches[0].clientX - swipeStartX.current
+    const dy = e.touches[0].clientY - swipeStartY.current
+
+    // If mostly vertical, cancel swipe (let page scroll)
+    if (Math.abs(dy) > Math.abs(dx) * 1.2) {
+      if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null }
+      swipingMsg.current = null
+      setSwipeOffset({})
+      return
     }
+
+    // Cancel long-press if user is swiping
+    if (longPressTimer.current && Math.abs(dx) > 5) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+
+    // Right swipe only, up to 60px
+    if (dx > 0 && dx < 80) {
+      e.preventDefault()
+      setSwipeOffset(prev => ({ ...prev, [msgId]: dx }))
+      if (dx > 50 && !swipeTriggered.current) {
+        swipeTriggered.current = true
+        const msg = messages.find(m => m.id === msgId)
+        if (msg) setReplyTo(msg)
+        // Haptic if supported
+        if ('vibrate' in navigator) navigator.vibrate(30)
+      }
+    }
+  }
+
+  const onTouchEnd = (msgId: string) => {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null }
+    setSwipeOffset(prev => {
+      const next = { ...prev }
+      delete next[msgId]
+      return next
+    })
+    swipingMsg.current = null
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
+    if (e.key === 'Escape') setReplyTo(null)
+  }
+
+  // ── "Seen by" logic ────────────────────────────────────────────────────────
+  // For a sent message, show who has read it (excluding the sender)
+  const seenBy = (msg: ChatMessage): string[] => {
+    if (msg.sender_id !== userId) return []
+    return (msg.read_by ?? []).filter(id => id !== userId).map(id => playerNames[id]).filter(Boolean)
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  // ── Match info bar ────────────────────────────────────────────────────────
-  const fmtDt = (iso: string | null | undefined) => {
-    if (!iso) return null
-    const d = new Date(iso)
-    return d.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true })
-  }
-  const fmtDate = (iso: string | null | undefined) => {
-    if (!iso) return null
-    return new Date(iso).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
-  }
-  const isUrgent = (iso: string | null | undefined) => {
-    if (!iso) return false
-    return new Date(iso).getTime() - Date.now() < 24 * 3600 * 1000
-  }
+  if (forbidden) return (
+    <div className="flex flex-col items-center justify-center h-screen gap-3">
+      <p className="text-slate-400">You don't have access to this chat.</p>
+      <button onClick={() => router.back()} className="text-emerald-500 text-sm">← Go back</button>
+    </div>
+  )
 
-  const MatchInfoBar = () => {
-    if (!matchInfo) return null
-    const { status, accept_deadline, match_deadline, confirmed_time, confirmation_deadline, slot_1, slot_2, slot_3, venue_name, venue_address, match_location } = matchInfo
-
-    const statusMeta: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
-      pending:              { label: 'Pending Response', color: 'text-yellow-600 dark:text-yellow-400', icon: <Clock className="h-3.5 w-3.5" /> },
-      accepted:             { label: 'Time Set', color: 'text-orange-600 dark:text-orange-400', icon: <Calendar className="h-3.5 w-3.5" /> },
-      accepted_open:        { label: 'Time TBD', color: 'text-amber-600 dark:text-amber-400', icon: <Clock className="h-3.5 w-3.5" /> },
-      time_pending_confirm: { label: 'Time Proposed', color: 'text-orange-600 dark:text-orange-400', icon: <Calendar className="h-3.5 w-3.5" /> },
-      scheduled:            { label: 'Scheduled', color: 'text-emerald-600 dark:text-emerald-400', icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
-      played:               { label: 'Match Played', color: 'text-blue-600 dark:text-blue-400', icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
-      forfeited:            { label: 'Forfeited', color: 'text-red-600 dark:text-red-400', icon: <XCircle className="h-3.5 w-3.5" /> },
-      dissolved:            { label: 'Dissolved', color: 'text-slate-500', icon: <XCircle className="h-3.5 w-3.5" /> },
-    }
-    const meta = statusMeta[status] ?? { label: status, color: 'text-slate-500', icon: <Clock className="h-3.5 w-3.5" /> }
-
-    // Pick the single most important deadline to surface in the collapsed bar
-    let primaryDeadline: { label: string; value: string | null } | null = null
-    if (status === 'pending')              primaryDeadline = { label: 'Accept by', value: accept_deadline }
-    else if (status === 'accepted')        primaryDeadline = { label: 'Confirm by', value: confirmation_deadline }
-    else if (status === 'time_pending_confirm') primaryDeadline = { label: 'Confirm by', value: confirmation_deadline }
-    else if (['accepted_open', 'scheduled'].includes(status)) primaryDeadline = { label: 'Play by', value: match_deadline }
-
-    const slots = [slot_1, slot_2, slot_3].filter(Boolean) as string[]
-    const locationLabel = venue_name ?? match_location ?? null
-
-    return (
-      <div className="border-b border-slate-200 dark:border-slate-800/60">
-        {/* Collapsed summary row */}
-        <button
-          onClick={() => setInfoOpen(o => !o)}
-          className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
-        >
-          <span className={`flex items-center gap-1 text-xs font-semibold ${meta.color}`}>
-            {meta.icon}{meta.label}
-          </span>
-          {primaryDeadline?.value && (
-            <span className={`text-xs ml-1 ${isUrgent(primaryDeadline.value) ? 'text-red-500 dark:text-red-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}`}>
-              · {primaryDeadline.label}: {fmtDate(primaryDeadline.value)}
-              {isUrgent(primaryDeadline.value) && ' ⚠️'}
-            </span>
-          )}
-          {confirmed_time && ['scheduled', 'accepted', 'time_pending_confirm'].includes(status) && (
-            <span className="text-xs text-slate-500 dark:text-slate-400 ml-1">· 📅 {fmtDt(confirmed_time)}</span>
-          )}
-          <span className="ml-auto text-slate-400 dark:text-slate-500 shrink-0">
-            {infoOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          </span>
-        </button>
-
-        {/* Expanded details */}
-        {infoOpen && (
-          <div className="px-4 pb-3 pt-0.5 space-y-2 bg-slate-50 dark:bg-slate-900/40">
-
-            {/* Match time */}
-            {confirmed_time && (
-              <div className="flex items-start gap-2">
-                <Calendar className="h-3.5 w-3.5 text-emerald-500 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wide">Match Time</p>
-                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">{fmtDt(confirmed_time)}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Venue / location */}
-            {locationLabel && (
-              <div className="flex items-start gap-2">
-                <MapPin className="h-3.5 w-3.5 text-blue-500 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wide">Venue</p>
-                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">{locationLabel}</p>
-                  {venue_address && <p className="text-[11px] text-slate-500 dark:text-slate-400">{venue_address}</p>}
-                </div>
-              </div>
-            )}
-
-            {/* Proposed slots (pending only) */}
-            {status === 'pending' && slots.length > 0 && (
-              <div className="flex items-start gap-2">
-                <Clock className="h-3.5 w-3.5 text-yellow-500 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wide mb-1">Proposed Slots</p>
-                  {slots.map((s, i) => (
-                    <p key={s} className="text-xs text-slate-700 dark:text-slate-300">
-                      <span className="text-slate-400 text-[10px] mr-1">Slot {i + 1}</span>{fmtDt(s)}
-                    </p>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Deadlines */}
-            <div className="flex items-start gap-2">
-              <AlertTriangle className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${isUrgent(match_deadline) ? 'text-red-500' : 'text-slate-400 dark:text-slate-500'}`} />
-              <div className="space-y-0.5">
-                {accept_deadline && status === 'pending' && (
-                  <p className={`text-xs ${isUrgent(accept_deadline) ? 'text-red-500 dark:text-red-400 font-semibold' : 'text-slate-600 dark:text-slate-400'}`}>
-                    Accept by: {fmtDt(accept_deadline)}
-                  </p>
-                )}
-                {confirmation_deadline && ['accepted', 'time_pending_confirm'].includes(status) && (
-                  <p className={`text-xs ${isUrgent(confirmation_deadline) ? 'text-red-500 dark:text-red-400 font-semibold' : 'text-slate-600 dark:text-slate-400'}`}>
-                    Confirm by: {fmtDt(confirmation_deadline)}
-                  </p>
-                )}
-                {match_deadline && !['played', 'forfeited', 'dissolved', 'scheduled'].includes(status) && (
-                  <p className={`text-xs ${isUrgent(match_deadline) ? 'text-red-500 dark:text-red-400 font-semibold' : 'text-slate-600 dark:text-slate-400'}`}>
-                    Play by: {fmtDt(match_deadline)}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Link to full challenge */}
-            <Link
-              href={`/challenges/${chat!.challenge_id}`}
-              className="inline-flex items-center gap-1 text-xs text-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 font-medium mt-0.5"
-            >
-              View full challenge details →
-            </Link>
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // ── Read-receipt tick component ───────────────────────────────────────────
-  // allPlayerIds = everyone who should be in the chat (from chat.allowed_player_ids)
-  const allPlayerIds = (chat?.allowed_player_ids ?? []) as string[]
-
-  const ReadTick = ({ msg }: { msg: ChatMessage }) => {
-    const readBy = (msg.read_by ?? []) as string[]
-    const isOptimistic = msg.id.startsWith('opt-')
-    const otherPlayerIds = allPlayerIds.filter(id => id !== userId)
-    const allRead = otherPlayerIds.length > 0 && otherPlayerIds.every(id => readBy.includes(id))
-
-    if (isOptimistic) {
-      // Single grey tick — still sending
-      return (
-        <svg className="inline h-3 w-3 text-slate-400 dark:text-slate-500" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M13.5 4.5L6.5 11.5L3 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-        </svg>
-      )
-    }
-
-    if (allRead) {
-      // Double teal/green tick — everyone read
-      return (
-        <span className="inline-flex">
-          <svg className="h-3 w-4 text-emerald-500" viewBox="0 0 20 16" fill="none">
-            <path d="M1 8L5.5 12.5L14 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-            <path d="M6 8L10.5 12.5L19 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </span>
-      )
-    }
-
-    // Double grey tick — sent but not all read
-    return (
-      <span className="inline-flex">
-        <svg className="h-3 w-4 text-slate-400 dark:text-slate-500" viewBox="0 0 20 16" fill="none">
-          <path d="M1 8L5.5 12.5L14 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="M6 8L10.5 12.5L19 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      </span>
-    )
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-white dark:bg-slate-950 flex items-center justify-center">
-        <Loader2 className="h-6 w-6 text-slate-400 animate-spin" />
-      </div>
-    )
-  }
-
-  if (forbidden || !chat) {
-    return (
-      <div className="min-h-screen bg-white dark:bg-slate-950 flex flex-col items-center justify-center px-6 text-center gap-4">
-        <MessageCircle className="h-10 w-10 text-slate-300 dark:text-slate-600" />
-        <p className="text-slate-500 dark:text-slate-400 font-medium">Chat not found</p>
-        <Link href="/chat" className="text-sm text-emerald-500 hover:underline">
-          ← Back to chats
-        </Link>
-      </div>
-    )
-  }
-
-  const challenge = chat.challenge
-  const teamA = challenge?.challenging_team?.name ?? '—'
-  const teamB = challenge?.challenged_team?.name ?? '—'
-  const code  = challenge?.challenge_code ?? ''
-  const challengeId = challenge?.id ?? ''
-
-  // Group messages with date separators
-  interface MsgGroup {
-    date:     string  // YYYY-MM-DD for grouping
-    messages: ChatMessage[]
-  }
-  const groups: MsgGroup[] = []
-  for (const msg of messages) {
-    const day = msg.created_at.slice(0, 10)
-    const last = groups[groups.length - 1]
-    if (!last || last.date !== day) {
-      groups.push({ date: day, messages: [msg] })
-    } else {
-      last.messages.push(msg)
-    }
-  }
+  const challengeRef = matchInfo ? `/challenges/${matchInfo.challengeId}` : '#'
+  const allPlayerIds = (chat?.allowed_player_ids as string[] | undefined) ?? []
 
   return (
-    <div className="flex flex-col h-screen bg-white dark:bg-slate-950">
-      {/* ── Header ── */}
-      <div className="sticky top-0 z-10 bg-white/95 dark:bg-slate-950/95 backdrop-blur border-b border-slate-200 dark:border-slate-800/60 px-4 py-3 flex items-center gap-3">
-        <Link
-          href="/chat"
-          className="flex-shrink-0 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors"
-        >
-          <ArrowLeft className="h-5 w-5 text-slate-500 dark:text-slate-400" />
-        </Link>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{teamA} vs {teamB}</p>
-          <Link
-            href={`/challenges/${challengeId}`}
-            className="text-xs text-slate-400 dark:text-slate-500 hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors"
+    <div className="flex flex-col h-[100dvh] bg-slate-50 dark:bg-slate-950 overflow-hidden">
+
+      {/* ── Fixed header ── */}
+      <div className="shrink-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700/50 z-10">
+        {/* Top row */}
+        <div className="flex items-center gap-3 px-3 py-2.5 pwa-header-inner">
+          <button
+            onClick={() => router.back()}
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
           >
-            {code}
-          </Link>
+            <ArrowLeft className="h-5 w-5 text-slate-600 dark:text-slate-300" />
+          </button>
+
+          <div className="flex-1 min-w-0">
+            {loading ? (
+              <div className="h-4 w-40 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
+            ) : (
+              <>
+                <p className="font-semibold text-sm text-slate-900 dark:text-white truncate leading-tight">
+                  {matchInfo?.challenging_team_name ?? '…'} vs {matchInfo?.challenged_team_name ?? '…'}
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+                  {matchInfo?.challengeCode} · {matchInfo ? statusLabel(matchInfo.status) : ''}
+                </p>
+              </>
+            )}
+          </div>
+
+          <button
+            onClick={() => setActiveTab(t => t === 'details' ? 'chat' : 'details')}
+            className={`w-8 h-8 flex items-center justify-center rounded-full transition-colors shrink-0 ${
+              activeTab === 'details'
+                ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            <Info className="h-4.5 w-4.5" />
+          </button>
+        </div>
+
+        {/* Tab bar */}
+        <div className="flex border-t border-slate-100 dark:border-slate-700/30">
+          {(['chat', 'details'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-1 py-2 text-xs font-semibold capitalize transition-colors border-b-2 ${
+                activeTab === tab
+                  ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400'
+                  : 'border-transparent text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
+              }`}
+            >
+              {tab === 'chat' ? 'Chat' : 'Match Info'}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* ── Match info bar ── */}
-      <MatchInfoBar />
-
-      {/* ── Message list ── */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <MessageCircle className="h-8 w-8 text-slate-300 dark:text-slate-600 mb-3" />
-            <p className="text-slate-400 dark:text-slate-500 text-sm">No messages yet.</p>
-            <p className="text-slate-300 dark:text-slate-600 text-xs mt-1">Say hi to kick things off!</p>
-          </div>
-        )}
-
-        {groups.map((group) => (
-          <div key={group.date}>
-            {/* Date separator */}
-            <div className="flex items-center gap-3 my-4">
-              <div className="flex-1 h-px bg-slate-200 dark:bg-slate-800" />
-              <span className="text-xs text-slate-400 dark:text-slate-500 font-medium px-2">
-                {dateSeparatorLabel(group.messages[0].created_at)}
+      {/* ── Details tab ── */}
+      {activeTab === 'details' && matchInfo && (
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div className="bg-white dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/50 overflow-hidden">
+            <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700/50">
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Challenge</p>
+              <p className="font-bold text-lg text-slate-900 dark:text-white mt-0.5">{matchInfo.challengeCode}</p>
+              <span className="inline-block mt-1 text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400 font-medium">
+                {statusLabel(matchInfo.status)}
               </span>
-              <div className="flex-1 h-px bg-slate-200 dark:bg-slate-800" />
             </div>
 
-            {group.messages.map((msg, idx) => {
-              const isOwn = msg.sender_id === userId
-              const sender = msg.sender as { id: string; name: string; avatar_url?: string | null } | null
-              const senderName = sender?.name ?? 'Unknown'
+            <div className="divide-y divide-slate-100 dark:divide-slate-700/30">
+              {/* Teams */}
+              <div className="px-4 py-3">
+                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Teams</p>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 text-center">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{matchInfo.challenging_team_name}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Challenger</p>
+                  </div>
+                  <div className="text-slate-400 font-bold text-sm">vs</div>
+                  <div className="flex-1 text-center">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{matchInfo.challenged_team_name}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Challenged</p>
+                  </div>
+                </div>
+              </div>
 
-              // Show name only for the first in a run from the same sender
-              const prevMsg = idx > 0 ? group.messages[idx - 1] : null
-              const showName = !isOwn && msg.sender_id !== prevMsg?.sender_id
+              {/* Match time */}
+              {matchInfo.confirmed_time && (
+                <div className="px-4 py-3 flex items-start gap-3">
+                  <Calendar className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Match time</p>
+                    <p className="text-sm font-medium text-slate-900 dark:text-white mt-0.5">{fmtDt(matchInfo.confirmed_time)}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Proposed slots */}
+              {!matchInfo.confirmed_time && (matchInfo.slot_1 || matchInfo.slot_2 || matchInfo.slot_3) && (
+                <div className="px-4 py-3">
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Proposed slots</p>
+                  <div className="space-y-1.5">
+                    {[matchInfo.slot_1, matchInfo.slot_2, matchInfo.slot_3].filter(Boolean).map((slot, i) => (
+                      <div key={i} className="flex items-center gap-2 text-sm">
+                        <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                        <span className="text-slate-700 dark:text-slate-300">{fmtDt(slot)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Venue / location */}
+              {(matchInfo.venue_name || matchInfo.match_location) && (
+                <div className="px-4 py-3 flex items-start gap-3">
+                  <MapPin className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Venue</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-300 mt-0.5">
+                      {matchInfo.venue_name ?? matchInfo.match_location}
+                    </p>
+                    {matchInfo.venue_address && (
+                      <p className="text-xs text-slate-400 mt-0.5">{matchInfo.venue_address}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Deadlines */}
+              {matchInfo.match_deadline && (
+                <div className="px-4 py-3 flex items-start gap-3">
+                  <Clock className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Match deadline</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-300 mt-0.5">{fmtDt(matchInfo.match_deadline)}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-700/30">
+              <a href={challengeRef} className="text-xs text-emerald-600 dark:text-emerald-400 font-medium hover:underline">
+                View full challenge details →
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Chat tab ── */}
+      {activeTab === 'chat' && (
+        <>
+          {/* Message list */}
+          <div
+            ref={messagesContainerRef}
+            className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5"
+            onClick={() => reactionPickerFor && setReactionPickerFor(null)}
+          >
+            {loading && (
+              <div className="flex items-center justify-center h-32">
+                <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+              </div>
+            )}
+
+            {!loading && messages.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-32 gap-2">
+                <p className="text-slate-400 dark:text-slate-500 text-sm">No messages yet</p>
+                <p className="text-slate-300 dark:text-slate-600 text-xs">Be the first to say something</p>
+              </div>
+            )}
+
+            {messages.map((msg, idx) => {
+              const isMine = msg.sender_id === userId
+              const prevMsg = idx > 0 ? messages[idx - 1] : null
+              const nextMsg = idx < messages.length - 1 ? messages[idx + 1] : null
+
+              // Date separator
+              const showDateSep = !prevMsg || dateSeparatorLabel(msg.created_at) !== dateSeparatorLabel(prevMsg.created_at)
+
+              // Group consecutive messages from same sender (within 2 min)
+              const isGrouped = !showDateSep && prevMsg?.sender_id === msg.sender_id &&
+                new Date(msg.created_at).getTime() - new Date(prevMsg.created_at).getTime() < 120_000
+              const isLastInGroup = !nextMsg || nextMsg.sender_id !== msg.sender_id ||
+                new Date(nextMsg.created_at).getTime() - new Date(msg.created_at).getTime() >= 120_000
+
+              const seenNames = seenBy(msg)
+              const reactions = msg.reactions ?? {}
+              const hasReactions = Object.keys(reactions).length > 0
+              const xOffset = swipeOffset[msg.id] ?? 0
 
               return (
-                <div
-                  key={msg.id}
-                  className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-0.5`}
-                >
-                  <div className={`max-w-[78%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col`}>
-                    {showName && (
-                      <p className="text-xs text-slate-400 dark:text-slate-500 ml-1 mb-0.5">{senderName}</p>
+                <div key={msg.id}>
+                  {/* Date separator */}
+                  {showDateSep && (
+                    <div className="flex items-center justify-center py-3">
+                      <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full">
+                        {dateSeparatorLabel(msg.created_at)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Message row */}
+                  <div
+                    className={`flex items-end gap-1.5 ${isMine ? 'flex-row-reverse' : 'flex-row'} ${isGrouped ? 'mt-0.5' : 'mt-2'}`}
+                    style={{ transform: `translateX(${isMine ? -xOffset : xOffset}px)`, transition: xOffset === 0 ? 'transform 0.2s ease' : 'none' }}
+                    onTouchStart={e => onTouchStart(e, msg.id)}
+                    onTouchMove={e => onTouchMove(e, msg.id)}
+                    onTouchEnd={() => onTouchEnd(msg.id)}
+                  >
+                    {/* Avatar (received, last in group) */}
+                    {!isMine && (
+                      <div className="w-7 shrink-0 self-end mb-0.5">
+                        {isLastInGroup ? (
+                          <Avatar name={msg.sender?.name ?? '?'} />
+                        ) : null}
+                      </div>
                     )}
-                    <div
-                      className={`
-                        px-3 py-2 rounded-2xl text-sm leading-relaxed
-                        ${isOwn
-                          ? 'bg-emerald-500 dark:bg-emerald-600 text-white rounded-br-sm'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-bl-sm'
-                        }
-                        ${msg.id.startsWith('opt-') ? 'opacity-70' : 'opacity-100'}
-                      `}
-                    >
-                      {msg.content}
+
+                    {/* Bubble + reactions + seen */}
+                    <div className={`max-w-[75%] ${isMine ? 'items-end' : 'items-start'} flex flex-col`}>
+
+                      {/* Sender name (received, first in group) */}
+                      {!isMine && !isGrouped && (
+                        <p className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 ml-1 mb-0.5">
+                          {msg.sender?.name ?? '?'}
+                        </p>
+                      )}
+
+                      {/* Bubble */}
+                      <div
+                        className={`relative rounded-2xl px-3 py-2 ${
+                          isMine
+                            ? 'bg-emerald-600 text-white rounded-br-sm'
+                            : 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700/50 rounded-bl-sm'
+                        } ${!isLastInGroup ? (isMine ? 'rounded-br-2xl' : 'rounded-bl-2xl') : ''}`}
+                        onDoubleClick={() => setReplyTo(msg)}
+                      >
+                        {/* Reply quote */}
+                        {msg.reply_to && (
+                          <div className={`text-[10px] rounded-lg px-2 py-1 mb-1.5 ${
+                            isMine
+                              ? 'bg-emerald-700/50 border-l-2 border-white/40'
+                              : 'bg-slate-100 dark:bg-slate-700/50 border-l-2 border-emerald-500'
+                          }`}>
+                            <p className={`font-semibold mb-0.5 ${isMine ? 'text-white/80' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                              {msg.reply_to.sender?.id === userId ? 'You' : (msg.reply_to.sender?.name ?? '?')}
+                            </p>
+                            <p className={`truncate ${isMine ? 'text-white/70' : 'text-slate-500 dark:text-slate-400'}`}>
+                              {msg.reply_to.content}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Message text */}
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
+
+                        {/* Time */}
+                        <p className={`text-[10px] mt-0.5 ${isMine ? 'text-white/60' : 'text-slate-400 dark:text-slate-500'} text-right`}>
+                          {msgTime(msg.created_at)}
+                        </p>
+                      </div>
+
+                      {/* Reactions */}
+                      {hasReactions && (
+                        <div className={`flex flex-wrap gap-1 mt-1 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                          {Object.entries(reactions).filter(([, ids]) => ids.length > 0).map(([emoji, ids]) => (
+                            <button
+                              key={emoji}
+                              onClick={() => handleReact(msg.id, emoji)}
+                              className={`flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full border transition-colors ${
+                                ids.includes(userId ?? '')
+                                  ? 'bg-emerald-100 border-emerald-300 dark:bg-emerald-500/20 dark:border-emerald-500/40'
+                                  : 'bg-white border-slate-200 dark:bg-slate-800 dark:border-slate-700/50 hover:bg-slate-50'
+                              }`}
+                            >
+                              <span>{emoji}</span>
+                              {ids.length > 1 && <span className="text-[9px] font-semibold text-slate-600 dark:text-slate-300">{ids.length}</span>}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Reaction picker */}
+                      {reactionPickerFor === msg.id && (
+                        <div className={`flex gap-1.5 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/50 rounded-full px-3 py-2 shadow-lg ${isMine ? 'self-end' : 'self-start'}`}>
+                          {REACTIONS.map(emoji => (
+                            <button key={emoji} onClick={() => handleReact(msg.id, emoji)} className="text-lg hover:scale-125 transition-transform active:scale-110">
+                              {emoji}
+                            </button>
+                          ))}
+                          <button onClick={() => setReactionPickerFor(null)} className="text-slate-400 hover:text-slate-600 ml-1">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Seen by */}
+                      {isMine && seenNames.length > 0 && isLastInGroup && (
+                        <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5 mr-0.5">
+                          Seen by {seenNames.join(', ')}
+                        </p>
+                      )}
                     </div>
-                    <div className={`flex items-center gap-1 mt-0.5 mx-1 ${isOwn ? 'flex-row-reverse' : ''}`}>
-                      <p className="text-[10px] text-slate-400 dark:text-slate-600">
-                        {formatTimestamp(msg.created_at)}
-                      </p>
-                      {isOwn && <ReadTick msg={msg} />}
-                    </div>
+
+                    {/* Swipe reply indicator */}
+                    {xOffset > 20 && (
+                      <div className={`self-center ${isMine ? 'mr-1' : 'ml-1'} text-emerald-500 opacity-${Math.min(100, Math.round(xOffset * 2))}`}>
+                        <Reply className="h-4 w-4" />
+                      </div>
+                    )}
                   </div>
                 </div>
               )
             })}
+            <div ref={bottomRef} className="h-1" />
           </div>
-        ))}
 
-        {/* Scroll anchor */}
-        <div ref={bottomRef} />
-      </div>
+          {/* ── Reply preview bar ── */}
+          {replyTo && (
+            <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700/50">
+              <div className="flex-1 min-w-0 border-l-2 border-emerald-500 pl-2">
+                <p className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                  {replyTo.sender_id === userId ? 'Replying to yourself' : `Replying to ${replyTo.sender?.name ?? '?'}`}
+                </p>
+                <p className="text-xs text-slate-600 dark:text-slate-300 truncate">{replyTo.content}</p>
+              </div>
+              <button onClick={() => setReplyTo(null)} className="text-slate-400 hover:text-slate-600 shrink-0 p-1">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
 
-      {/* ── Input bar (or closed notice) ── */}
-      {matchInfo && ['played', 'forfeited', 'dissolved'].includes(matchInfo.status) ? (
-        <div className="flex-shrink-0 border-t border-slate-200 dark:border-slate-800/60 bg-slate-50 dark:bg-slate-900/60 px-4 py-3 flex items-center justify-center gap-2">
-          {matchInfo.status === 'played'    && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />}
-          {matchInfo.status === 'forfeited' && <XCircle className="h-4 w-4 text-red-400 shrink-0" />}
-          {matchInfo.status === 'dissolved' && <XCircle className="h-4 w-4 text-slate-400 shrink-0" />}
-          <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
-            {matchInfo.status === 'played'
-              ? 'Match is over — this chat is now read-only'
-              : matchInfo.status === 'forfeited'
-              ? 'Challenge forfeited — this chat is closed'
-              : 'Challenge dissolved — this chat is closed'}
-          </p>
-        </div>
-      ) : (
-        <div className="flex-shrink-0 border-t border-slate-200 dark:border-slate-800/60 bg-slate-50 dark:bg-slate-950 px-3 py-3 pb-safe">
-          <form onSubmit={handleSend} className="flex items-end gap-2">
-            <textarea
-              ref={inputRef}
-              value={content}
-              onChange={e => setContent(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type a message…"
-              rows={1}
-              maxLength={2000}
-              disabled={sending}
-              className="
-                flex-1 resize-none
-                bg-white dark:bg-slate-800/70
-                border border-slate-300 dark:border-slate-700/60
-                rounded-2xl px-4 py-2.5
-                text-sm text-slate-900 dark:text-white
-                placeholder-slate-400 dark:placeholder-slate-500
-                focus:outline-none focus:border-emerald-500/70 dark:focus:border-emerald-500/50
-                focus:ring-1 focus:ring-emerald-500/30
-                transition-colors max-h-32 overflow-y-auto
-                disabled:opacity-60 shadow-sm
-              "
-              style={{ minHeight: '42px' }}
-              onInput={(e) => {
-                const el = e.currentTarget
-                el.style.height = 'auto'
-                el.style.height = `${Math.min(el.scrollHeight, 128)}px`
-              }}
-            />
-            <button
-              type="submit"
-              disabled={!content.trim() || sending}
-              className="
-                flex-shrink-0 w-10 h-10 rounded-full bg-emerald-500 hover:bg-emerald-600
-                disabled:opacity-40 disabled:cursor-not-allowed
-                flex items-center justify-center transition-colors shadow-sm
-              "
-            >
-              {sending
-                ? <Loader2 className="h-4 w-4 text-white animate-spin" />
-                : <Send className="h-4 w-4 text-white" />
-              }
-            </button>
-          </form>
-        </div>
+          {/* ── Input bar ── */}
+          <div className="shrink-0 px-3 py-2.5 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700/50 pwa-safe-bottom">
+            <form onSubmit={handleSend} className="flex items-end gap-2">
+              <textarea
+                ref={inputRef}
+                value={content}
+                onChange={e => setContent(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Message…"
+                rows={1}
+                className="flex-1 resize-none rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 max-h-32 leading-snug"
+                style={{ scrollbarWidth: 'none' }}
+              />
+              <button
+                type="submit"
+                disabled={!content.trim() || sending}
+                className="w-10 h-10 rounded-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors shrink-0"
+              >
+                {sending ? <Loader2 className="h-4 w-4 animate-spin text-white" /> : <Send className="h-4 w-4 text-white" />}
+              </button>
+            </form>
+          </div>
+        </>
       )}
     </div>
   )
