@@ -1337,17 +1337,23 @@ export default function DashboardPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <StatusPill label="Result Submitted" color="slate" />
-                      <CountdownPill deadline={c.match_result?.verify_deadline} />
+                      {c.match_result?.disputed_at
+                        ? <StatusPill label="Score Disputed" color="orange" />
+                        : <StatusPill label="Result Submitted" color="slate" />}
+                      {!c.match_result?.disputed_at && (
+                        <CountdownPill deadline={c.match_result?.verify_deadline} />
+                      )}
                     </div>
                     <p className="text-base font-semibold text-slate-900 dark:text-white">
                       {matchup(c)}
                     </p>
                     <OppContact c={c} />
                     <p className="text-sm text-slate-500 mt-0.5">
-                      {c.match_result?.verify_deadline && new Date(c.match_result.verify_deadline) < new Date()
-                        ? 'Timer expired — auto-approval running shortly'
-                        : 'Waiting for them to verify — auto-approves when timer expires'}
+                      {c.match_result?.disputed_at
+                        ? 'They disputed your score — view the challenge to accept or escalate'
+                        : c.match_result?.verify_deadline && new Date(c.match_result.verify_deadline) < new Date()
+                          ? 'Timer expired — auto-approval running shortly'
+                          : 'Waiting for them to verify — auto-approves when timer expires'}
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-2 shrink-0">

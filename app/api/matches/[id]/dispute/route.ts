@@ -67,10 +67,6 @@ export async function POST(
     return NextResponse.json({ error: 'Result already verified — cannot dispute' }, { status: 400 })
   }
 
-  if (result.disputed_at) {
-    return NextResponse.json({ error: 'A dispute has already been filed for this result' }, { status: 400 })
-  }
-
   if (result.dispute_resolved_at) {
     return NextResponse.json({ error: 'Dispute already resolved' }, { status: 400 })
   }
@@ -114,19 +110,30 @@ export async function POST(
 
   const now = new Date()
 
-  // Compute the flag deadline (reporter has this many minutes to accept or we escalate)
   const flagDeadline = addMinutes(now, disputeWindowMinutes)
 
-  const { error: updateErr } = await adminClient
+  // ── Atomic update: only succeeds if disputed_at is still NULL ─────────────
+  // This prevents duplicate disputes if the user clicks the button multiple times.
+  // verify_deadline is intentionally NOT updated — once disputed, the cron skips
+  // this result entirely. The reporter's response deadline is driven by
+  // disputed_at + dispute_window_minutes, shown separately in the UI.
+  const { data: updatedRows, error: updateErr } = await adminClient
     .from('match_results')
     .update({
       disputed_score: disputedScore,
-      disputed_at: now.toISOString(),
+      disputed_at:    now.toISOString(),
     })
     .eq('id', params.id)
+    .is('disputed_at', null)   // ← atomic guard: skip if already disputed
+    .select('id')
 
   if (updateErr) {
     return NextResponse.json({ error: updateErr.message }, { status: 500 })
+  }
+
+  // If no rows were updated, a dispute was already filed (race condition caught)
+  if (!updatedRows || updatedRows.length === 0) {
+    return NextResponse.json({ error: 'A dispute has already been filed for this result' }, { status: 400 })
   }
 
   // Log to challenge timeline

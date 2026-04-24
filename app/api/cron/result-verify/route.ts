@@ -29,7 +29,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, message: 'No active season' })
     }
 
-    // Step 1: find all match_results past their verify_deadline that haven't been verified
+    // Step 1: find all match_results past their verify_deadline that haven't been verified.
+    // Skip disputed results — those require the reporter to accept/reject the counter-score
+    // before anything can be auto-verified.
     const { data: pendingResults } = await adminClient
       .from('match_results')
       .select('id, challenge_id, winner_team_id, loser_team_id, verify_deadline')
@@ -38,6 +40,7 @@ export async function GET(request: NextRequest) {
       .eq('auto_verified', false)
       .not('verify_deadline', 'is', null)
       .lt('verify_deadline', now.toISOString())
+      .is('disputed_at', null)   // ← never auto-verify a disputed result
 
     if (!pendingResults || pendingResults.length === 0) {
       return NextResponse.json({ success: true, message: 'No pending results', processed: 0 })
