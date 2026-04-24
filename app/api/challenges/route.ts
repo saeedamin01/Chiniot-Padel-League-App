@@ -175,12 +175,31 @@ export async function POST(request: NextRequest) {
         .eq('id', challenge.id)
     }
 
-    // Notify the challenged team
+    // Notify the challenged team + create chat room immediately
     const { data: challengedTeamData } = await adminClient
       .from('teams')
       .select('player1_id, player2_id, name')
       .eq('id', challengedTeamId)
       .single()
+
+    // ── Create chat room as soon as the challenge is sent ─────────────────────
+    // Both teams can start coordinating immediately, even before acceptance.
+    // If the challenge is dissolved without acceptance, the chat shows as closed.
+    if (challengedTeamData && challengingTeam) {
+      const allPlayerIds = [
+        challengingTeam.player1_id,
+        challengingTeam.player2_id,
+        challengedTeamData.player1_id,
+        challengedTeamData.player2_id,
+      ].filter(Boolean)
+
+      await adminClient
+        .from('challenge_chats')
+        .upsert(
+          { challenge_id: challenge.id, allowed_player_ids: allPlayerIds },
+          { onConflict: 'challenge_id', ignoreDuplicates: true }
+        )
+    }
 
     const ticketLabel = ticketType ? ` (${ticketType.charAt(0).toUpperCase() + ticketType.slice(1)} Ticket Challenge)` : ''
 
