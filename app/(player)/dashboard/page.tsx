@@ -1185,7 +1185,7 @@ export default function DashboardPage() {
             {sentPending.map(c => (
               <DCard key={c.id} className="p-4">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <StatusPill label="Challenge Sent" color="blue" />
                       <CountdownPill deadline={c.accept_deadline} />
@@ -1195,11 +1195,27 @@ export default function DashboardPage() {
                     <OppContact c={c} />
                     <p className="text-sm text-slate-500 mt-0.5">Waiting for them to respond</p>
                   </div>
-                  <Link href={`/challenges/${c.id}`}>
-                    <button className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 flex items-center gap-0.5 shrink-0">
-                      View <ChevronRight className="h-3.5 w-3.5" />
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <Link href={`/challenges/${c.id}`}>
+                      <button className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 flex items-center gap-0.5">
+                        View <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </Link>
+                    <button onClick={() => openChat(c.id)} disabled={chatLoading === c.id}
+                      className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors">
+                      {chatLoading === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : (
+                        <span className="relative">
+                          <MessageCircle className="h-3 w-3" />
+                          {(unreadByChallengeId[c.id] ?? 0) > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 min-w-[13px] h-[13px] px-0.5 rounded-full bg-emerald-500 text-white text-[8px] font-bold flex items-center justify-center">
+                              {unreadByChallengeId[c.id] > 9 ? '9+' : unreadByChallengeId[c.id]}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                      Chat
                     </button>
-                  </Link>
+                  </div>
                 </div>
               </DCard>
             ))}

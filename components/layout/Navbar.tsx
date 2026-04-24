@@ -100,7 +100,7 @@ function TeamSwitcher() {
               <ChevronDown className="h-3 w-3 opacity-60 shrink-0" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="center" className="w-56">
+          <DropdownMenuContent align="center" className="w-56 z-[200]">
             <DropdownMenuLabel className="text-muted-foreground text-xs">Switch Active Team</DropdownMenuLabel>
             <DropdownMenuSeparator />
             {teams.map(team => {
@@ -282,7 +282,7 @@ export function Navbar({
                 </button>
               </DropdownMenuTrigger>
 
-              <DropdownMenuContent align="end" className="w-60 p-0 overflow-hidden">
+              <DropdownMenuContent align="end" className="w-60 p-0 overflow-hidden z-[200]">
                 {/* Profile header */}
                 <div className="flex items-center gap-3 px-4 py-3.5 bg-gradient-to-br from-emerald-500/10 to-teal-600/5 border-b border-border">
                   <Avatar className="h-11 w-11 ring-2 ring-emerald-500/50 ring-offset-2 ring-offset-background shrink-0">
