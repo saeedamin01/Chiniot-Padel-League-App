@@ -207,6 +207,15 @@ export default function DashboardPage() {
   const [scoreState, setScoreState]         = useState({ s1ch: '', s1cd: '', s2ch: '', s2cd: '', tbch: '', tbcd: '' })
   const [scoreVenueId, setScoreVenueId]     = useState('')
   const [scoreSubmitting, setScoreSubmitting] = useState(false)
+  // Refs for score inputs — used for auto-advance between fields
+  const scoreRefs = {
+    s1ch: React.useRef<HTMLInputElement>(null),
+    s1cd: React.useRef<HTMLInputElement>(null),
+    s2ch: React.useRef<HTMLInputElement>(null),
+    s2cd: React.useRef<HTMLInputElement>(null),
+    tbch: React.useRef<HTMLInputElement>(null),
+    tbcd: React.useRef<HTMLInputElement>(null),
+  }
   const [venues, setVenues]                 = useState<Array<{ id: string; name: string; address?: string | null }>>([])
   const [chatLoading, setChatLoading]       = useState<string | null>(null)
   const [activeTickets, setActiveTickets]   = useState<Array<{ id: string; ticket_type: string }>>([])
@@ -1461,33 +1470,64 @@ export default function DashboardPage() {
           : cdSets >= 2 ? c.challenged_team.name
           : needsTB && tbch && tbcd ? (n(tbch) > n(tbcd) ? c.challenging_team.name : c.challenged_team.name)
           : null
-        const setScores = (field: keyof typeof scoreState) => (e: React.ChangeEvent<HTMLInputElement>) =>
-          setScoreState(prev => ({ ...prev, [field]: e.target.value }))
-        const ScoreRow = ({ label, chField, cdField }: { label: string; chField: keyof typeof scoreState; cdField: keyof typeof scoreState }) => (
+        // Advance order for set score fields (single digit → jump to next)
+        const ADVANCE: Partial<Record<keyof typeof scoreState, keyof typeof scoreState>> = {
+          s1ch: 's1cd', s1cd: 's2ch', s2ch: 's2cd',
+          s2cd: needsTB ? 'tbch' : undefined,
+        }
+        const handleScore = (field: keyof typeof scoreState, isTiebreak = false) =>
+          (e: React.ChangeEvent<HTMLInputElement>) => {
+            const raw = e.target.value.replace(/[^0-9]/g, '')
+            const val = isTiebreak ? raw.slice(0, 2) : raw.slice(0, 1)
+            setScoreState(prev => ({ ...prev, [field]: val }))
+            // Auto-advance for set scores only
+            if (!isTiebreak && val.length === 1) {
+              const next = ADVANCE[field]
+              if (next && scoreRefs[next].current) {
+                scoreRefs[next].current.focus()
+                scoreRefs[next].current.select()
+              }
+            }
+          }
+        const ScoreRow = ({ label, chField, cdField, isTiebreak = false }: {
+          label: string; chField: keyof typeof scoreState; cdField: keyof typeof scoreState; isTiebreak?: boolean
+        }) => (
           <div className="flex items-center gap-3">
             <span className="text-slate-500 dark:text-slate-400 text-xs font-semibold w-8 shrink-0 text-center">{label}</span>
             <div className="flex items-center gap-2 flex-1">
               <div className="flex-1">
                 <p className="text-xs text-slate-500 mb-1 truncate text-center font-medium">{c.challenging_team.name}</p>
-                <Input type="number" min="0" max="99" inputMode="numeric"
-                  value={scoreState[chField]} onChange={setScores(chField)}
-                  className="text-center h-14 text-2xl font-bold" placeholder="0" />
+                <input
+                  ref={scoreRefs[chField]}
+                  type="text" inputMode="numeric" pattern="[0-9]*"
+                  maxLength={isTiebreak ? 2 : 1}
+                  value={scoreState[chField]} onChange={handleScore(chField, isTiebreak)}
+                  className="w-full text-center h-14 text-2xl font-bold rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-400"
+                  placeholder="0" />
               </div>
               <span className="text-slate-300 dark:text-slate-600 font-bold text-xl mt-6 shrink-0">–</span>
               <div className="flex-1">
                 <p className="text-xs text-slate-500 mb-1 truncate text-center font-medium">{c.challenged_team.name}</p>
-                <Input type="number" min="0" max="99" inputMode="numeric"
-                  value={scoreState[cdField]} onChange={setScores(cdField)}
-                  className="text-center h-14 text-2xl font-bold" placeholder="0" />
+                <input
+                  ref={scoreRefs[cdField]}
+                  type="text" inputMode="numeric" pattern="[0-9]*"
+                  maxLength={isTiebreak ? 2 : 1}
+                  value={scoreState[cdField]} onChange={handleScore(cdField, isTiebreak)}
+                  className="w-full text-center h-14 text-2xl font-bold rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-400"
+                  placeholder="0" />
               </div>
             </div>
           </div>
         )
         return (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center"
+          // z-[60] keeps modal above the fixed bottom nav (z-50)
+          // On mobile: padding-bottom accounts for bottom nav + safe area so content isn't hidden
+          <div className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center"
+            style={{ paddingBottom: 'calc(4rem + env(safe-area-inset-bottom, 0px))' } as React.CSSProperties}
             onClick={e => { if (e.target === e.currentTarget) setScoreModal(null) }}>
             <div className="w-full sm:max-w-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700
-              rounded-t-2xl sm:rounded-2xl p-5 space-y-5 max-h-[92vh] overflow-y-auto shadow-xl">
+              rounded-t-2xl sm:rounded-2xl p-5 space-y-5 max-h-[85dvh] overflow-y-auto shadow-xl"
+              onClick={e => e.stopPropagation()}>
               <div className="flex justify-center sm:hidden">
                 <div className="w-10 h-1 bg-slate-200 dark:bg-slate-600 rounded-full" />
               </div>
@@ -1514,7 +1554,7 @@ export default function DashboardPage() {
                       <span className="text-xs text-orange-500 font-bold tracking-wide">SUPER TIEBREAK</span>
                       <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
                     </div>
-                    <ScoreRow label="TB" chField="tbch" cdField="tbcd" />
+                    <ScoreRow label="TB" chField="tbch" cdField="tbcd" isTiebreak />
                   </div>
                 )}
               </div>
