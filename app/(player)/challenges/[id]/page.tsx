@@ -432,7 +432,7 @@ export default function ChallengeDetailPage() {
       })
       const data = await res.json()
       if (!res.ok) { toast.error(data.error || 'Failed'); return }
-      toast.success(action === 'confirm' ? 'Reschedule agreed — awaiting admin approval.' : 'Reschedule declined. Match stays at original time.')
+      toast.success(action === 'confirm' ? 'Reschedule confirmed — match has been rescheduled.' : 'Reschedule declined. Match stays at original time.')
       await fetchChallenge()
     } catch {
       toast.error('An error occurred')
@@ -760,7 +760,7 @@ export default function ChallengeDetailPage() {
     reschedule_requested: challenge?.reschedule_requested_by && userTeamIds.includes(challenge.reschedule_requested_by)
       ? 'Awaiting other team\'s response'
       : 'Reschedule requested — please respond',
-    reschedule_pending_admin: 'Awaiting admin approval',
+    reschedule_pending_admin: 'Reschedule pending',
     revision_proposed: 'Revised time proposed',
     scheduled: 'Match scheduled',
     result_pending: 'Awaiting result verification',
@@ -1611,9 +1611,9 @@ export default function ChallengeDetailPage() {
           <div className="flex items-start gap-3">
             <AlertCircle className="h-5 w-5 text-yellow-400 shrink-0 mt-0.5" />
             <div className="space-y-2">
-              <p className="font-semibold text-yellow-300">Awaiting Admin Approval</p>
+              <p className="font-semibold text-yellow-300">Reschedule Pending</p>
               <p className="text-yellow-200/80 text-sm">
-                Both teams have agreed to the reschedule. An admin will review and either approve or reject the new time.
+                This reschedule is pending review.
               </p>
               {challenge.reschedule_proposed_time && (
                 <div className="mt-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">

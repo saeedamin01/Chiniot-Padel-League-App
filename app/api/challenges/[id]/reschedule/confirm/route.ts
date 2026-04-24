@@ -2,14 +2,14 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { logChallengeEvent } from '@/lib/challenges/events'
-import { notifyAdmins } from '@/lib/notifications/service'
+import { createNotification } from '@/lib/notifications/service'
 
 export const dynamic = 'force-dynamic'
 
 // POST /api/challenges/[id]/reschedule/confirm
 //
 // Called by the OTHER team (not who requested the reschedule) to either
-// agree to the reschedule (→ reschedule_pending_admin, awaiting admin approval)
+// agree to the reschedule (→ scheduled with new time, no admin needed)
 // or decline it (→ back to scheduled, original time kept).
 //
 // Body: { action: 'confirm' | 'decline' }
@@ -79,11 +79,25 @@ export async function POST(
     const confirmingTeam = isChallenger ? challengingTeam : challengedTeam
 
     if (action === 'confirm') {
+      // Both teams agreed — apply the new time immediately, no admin step needed.
+      const newTime    = challenge.reschedule_proposed_time
+      const newVenueId = challenge.reschedule_proposed_venue_id ?? challenge.venue_id
+
       const { data: updated, error: updateError } = await adminClient
         .from('challenges')
         .update({
-          status: 'reschedule_pending_admin',
-          reschedule_confirmed_at: now.toISOString(),
+          status:                      'scheduled',
+          confirmed_time:              newTime,
+          match_date:                  newTime,
+          venue_id:                    newVenueId,
+          reschedule_confirmed_at:     now.toISOString(),
+          // Clear reschedule fields now that it's applied
+          reschedule_requested_by:     null,
+          reschedule_proposed_time:    null,
+          reschedule_proposed_venue_id: null,
+          reschedule_reason:           null,
+          original_confirmed_time:     null,
+          original_venue_id:           null,
         })
         .eq('id', params.id)
         .select()
@@ -93,57 +107,59 @@ export async function POST(
         return NextResponse.json({ error: updateError.message }, { status: 500 })
       }
 
-      // Notify requesting team their counterpart agreed
-      if (requestingTeam) {
-        await adminClient.from('notifications').insert([
-          {
-            player_id: requestingTeam.player1_id,
-            team_id: requestingTeam.id,
-            type: 'reschedule_confirmed',
-            title: 'Reschedule Agreed — Awaiting Admin',
-            message: `${confirmingTeam?.name} agreed to the reschedule. It's now pending admin approval.`,
-            action_url: `/challenges/${params.id}`,
-            is_read: false,
-            email_sent: false,
-          },
-          {
-            player_id: requestingTeam.player2_id,
-            team_id: requestingTeam.id,
-            type: 'reschedule_confirmed',
-            title: 'Reschedule Agreed — Awaiting Admin',
-            message: `${confirmingTeam?.name} agreed to the reschedule. It's now pending admin approval.`,
-            action_url: `/challenges/${params.id}`,
-            is_read: false,
-            email_sent: false,
-          },
-        ])
-      }
+      const formattedTime = newTime
+        ? new Date(newTime).toLocaleString('en-GB', {
+            weekday: 'short', day: 'numeric', month: 'short',
+            hour: 'numeric', minute: '2-digit', hour12: true,
+          })
+        : 'the new time'
+
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      const challengeUrl = `${appUrl}/challenges/${params.id}`
+
+      // Fire-and-forget notifications to all 4 players
+      ;(async () => {
+        try {
+          const allTeams = [
+            { team: requestingTeam,  teamId: challenge.reschedule_requested_by },
+            { team: confirmingTeam,  teamId: myTeamId },
+          ]
+          const notifs: Promise<unknown>[] = []
+          for (const { team, teamId } of allTeams) {
+            if (!team) continue
+            for (const pid of [team.player1_id, team.player2_id]) {
+              if (!pid) continue
+              notifs.push(createNotification({
+                playerId:  pid,
+                teamId:    teamId!,
+                type:      'reschedule_confirmed',
+                title:     '📅 Match rescheduled',
+                message:   `${challengingTeam?.name} vs ${challengedTeam?.name} has been rescheduled to ${formattedTime}.`,
+                actionUrl: challengeUrl,
+                sendEmail: true,
+              }))
+            }
+          }
+          await Promise.all(notifs)
+        } catch { /* fire-and-forget */ }
+      })()
 
       await adminClient.from('audit_log').insert({
-        actor_id: user.id,
+        actor_id:    user.id,
         actor_email: user.email,
-        action_type: 'reschedule_team_confirmed',
+        action_type: 'reschedule_confirmed',
         entity_type: 'challenge',
-        entity_id: params.id,
-        new_value: { status: 'reschedule_pending_admin' },
-        created_at: now.toISOString(),
+        entity_id:   params.id,
+        new_value:   { status: 'scheduled', confirmed_time: newTime },
+        created_at:  now.toISOString(),
       })
 
       await logChallengeEvent({
         challengeId: params.id,
-        eventType: 'reschedule_confirmed_by_team',
-        actorId: user.id,
-        actorRole: 'player',
-        data: { action },
-      })
-
-      // Notify admins: action required
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-      await notifyAdmins({
-        type: 'reschedule_pending_admin',
-        title: '🗓 Reschedule needs your approval',
-        message: `${challengingTeam?.name} vs ${challengedTeam?.name} (${challenge.challenge_code}) — both teams agreed to reschedule. Please review and approve or reject.`,
-        actionUrl: `${appUrl}/admin/challenges`,
+        eventType:   'reschedule_approved',
+        actorId:     user.id,
+        actorRole:   'player',
+        data:        { new_time: newTime, new_venue_id: newVenueId },
       })
 
       return NextResponse.json({ challenge: updated })
