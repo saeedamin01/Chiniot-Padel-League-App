@@ -355,7 +355,7 @@ export default function ChallengeDetailPage() {
 
       toast.success(
         acceptOption === 'open'
-          ? 'Challenge accepted! Agree on a time over WhatsApp, then enter it here.'
+          ? 'Challenge accepted! Agree on a time over chat, then enter it here.'
           : 'Slot selected — match is now confirmed and scheduled!'
       )
       await fetchChallenge()
@@ -991,7 +991,7 @@ export default function ChallengeDetailPage() {
                   <Clock className="h-4 w-4 text-blue-400" />
                 </div>
                 <div>
-                  <p className="font-semibold text-white text-sm">Accept — agree on a time over WhatsApp</p>
+                  <p className="font-semibold text-white text-sm">Accept — agree on a time over chat</p>
                   <p className="text-xs text-slate-400 mt-0.5">Accept now and enter the mutually agreed time later. You won't be able to choose from their slots.</p>
                 </div>
               </button>
@@ -1037,7 +1037,7 @@ export default function ChallengeDetailPage() {
                   </button>
                 )
               })}
-              <p className="text-xs text-slate-500">Venue will be confirmed after discussing over WhatsApp.</p>
+              <p className="text-xs text-slate-500">Venue will be confirmed after discussing over chat.</p>
               <Button onClick={handleAccept} disabled={actionLoading || selectedSlotIndex === null} className="w-full bg-emerald-500 hover:bg-emerald-600 h-11">
                 {actionLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Check className="h-4 w-4 mr-2" />}
                 Confirm Selected Slot
@@ -1073,7 +1073,7 @@ export default function ChallengeDetailPage() {
             <span className="text-white font-medium">
               {isChallengingTeam ? challenge.challenged_team?.name : challenge.challenging_team?.name}
             </span>{' '}
-            over WhatsApp. Either team can enter the agreed details below — the other team will confirm in the app.
+            over chat. Either team can enter the agreed details below — the other team will confirm in the app.
           </p>
           {challenge.match_deadline && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
@@ -1117,7 +1117,7 @@ export default function ChallengeDetailPage() {
             <div>
               <p className="font-semibold text-blue-300 mb-1">Waiting for Response</p>
               <p className="text-blue-200 text-sm">
-                {challenge.challenged_team?.name} will coordinate a time with you over WhatsApp, then enter it in the app for you to confirm.
+                {challenge.challenged_team?.name} will coordinate a time with you over chat, then enter it in the app for you to confirm.
                 They have until the deadline to accept.
               </p>
             </div>

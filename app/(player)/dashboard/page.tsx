@@ -933,7 +933,16 @@ export default function DashboardPage() {
                     <Calendar className="h-4 w-4" />Enter Match Time &amp; Venue
                   </Button>
                 </Link>
-                <OpenChatBtn id={c.id} />
+                <div className="flex items-center gap-2 mt-2">
+                  <div className="flex-1">
+                    <OpenChatBtn id={c.id} />
+                  </div>
+                  <Link href={`/challenges/${c.id}`} className="shrink-0">
+                    <button className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 flex items-center gap-0.5 px-2 py-1">
+                      View <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  </Link>
+                </div>
               </DCard>
             ))}
 
