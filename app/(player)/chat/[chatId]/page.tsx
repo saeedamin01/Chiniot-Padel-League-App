@@ -248,31 +248,16 @@ export default function ChatThreadPage() {
       map[user.id] = 'You'
       setPlayerNames(map)
 
-      // Mark read and then refresh messages so read_by reflects current state
+      // Mark read — update read_by in state directly (no re-fetch to avoid
+      // resetting reply_to enrichment built above)
       await supabase.rpc('mark_chat_messages_read', { p_chat_id: chatId })
       refreshUnread()
-
-      // Re-fetch messages so read_by includes the current user
-      const { data: freshMsgs } = await supabase
-        .from('chat_messages')
-        .select(`
-          id, chat_id, sender_id, content, read_by, reactions,
-          reply_to_message_id, created_at,
-          sender:players!chat_messages_sender_id_fkey ( id, name, avatar_url )
-        `)
-        .eq('chat_id', chatId)
-        .order('created_at', { ascending: true })
-
-      if (freshMsgs) {
-        const freshArr = freshMsgs as unknown as ChatMessage[]
-        const freshMap: Record<string, ChatMessage> = {}
-        for (const m of freshArr) freshMap[m.id] = m
-        setMessages(freshArr.map(m => {
-          if (!m.reply_to_message_id) return m
-          const parent = freshMap[m.reply_to_message_id]
-          return { ...m, reply_to: parent ? { id: parent.id, content: parent.content, sender: parent.sender ?? null } : null }
-        }))
-      }
+      // Update read_by in existing state so "Seen by" reflects immediately
+      setMessages(prev => prev.map(m =>
+        !m.read_by.includes(user.id)
+          ? { ...m, read_by: [...m.read_by, user.id] }
+          : m
+      ))
     }
 
     init()
@@ -506,6 +491,7 @@ export default function ChatThreadPage() {
 
   const challengeRef = matchInfo ? `/challenges/${matchInfo.challengeId}` : '#'
   const allPlayerIds = (chat?.allowed_player_ids as string[] | undefined) ?? []
+  // Chat is read-only once the challenge is fully terminal
   const isClosed = matchInfo ? ['played', 'forfeited', 'dissolved'].includes(matchInfo.status) : false
 
   return (

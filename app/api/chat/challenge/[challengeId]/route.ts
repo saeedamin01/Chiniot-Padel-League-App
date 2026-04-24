@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
 
 const ACCEPTED_STATUSES = [
+  'pending',           // chat created at challenge send time
   'accepted_open',
   'accepted',
   'time_pending_confirm',
