@@ -796,6 +796,17 @@ export default function LadderPage() {
                               </div>
                             </div>
                           )}
+
+                          {/* View full team profile */}
+                          {pos.team_id && (
+                            <Link
+                              href={`/teams/${pos.team_id}`}
+                              className="flex items-center justify-center gap-1.5 w-full py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-700/60 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+                            >
+                              <Users className="h-3.5 w-3.5" />
+                              View team profile &amp; match history
+                            </Link>
+                          )}
                         </div>
                       )}
                     </div>
