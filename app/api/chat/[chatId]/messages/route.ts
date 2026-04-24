@@ -116,6 +116,8 @@ export async function POST(
       sendPushEvent('chat_message', otherPlayerIds, {
         senderName,
         messagePreview,
+        challengingTeamName: teamA,
+        challengedTeamName: teamB,
         challengeCode,
         chatId,
       }).catch(err => console.warn('[Chat] push failed:', err))

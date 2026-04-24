@@ -26,12 +26,14 @@ export type PushEvent =
 
 export interface PushChallengeReceivedPayload {
   challengingTeamName: string
+  challengedTeamName: string
   challengeCode: string
   challengeId: string
 }
 
 export interface PushChallengeAcceptedPayload {
   challengedTeamName: string
+  challengingTeamName: string
   challengeCode: string
   mode: 'open' | 'slot'
   challengeId: string
@@ -39,19 +41,23 @@ export interface PushChallengeAcceptedPayload {
 
 export interface PushMatchScheduledPayload {
   opponentName: string
+  myTeamName: string
   challengeCode: string
-  scheduledTime: string  // ISO — used only for the notification body text
+  scheduledTime: string
   challengeId: string
 }
 
 export interface PushResultSubmittedPayload {
   reporterTeamName: string
+  opponentTeamName: string
   challengeCode: string
   isReporter: boolean
   challengeId: string
 }
 
 export interface PushChallengeDissolvedPayload {
+  challengingTeamName: string
+  challengedTeamName: string
   challengeCode: string
   reason: string
   challengeId: string
@@ -59,12 +65,15 @@ export interface PushChallengeDissolvedPayload {
 
 export interface PushScoreDisputedPayload {
   disputerTeamName: string
+  opponentTeamName: string
   challengeCode: string
   isReporter: boolean
   challengeId: string
 }
 
 export interface PushDisputeResolvedPayload {
+  challengingTeamName: string
+  challengedTeamName: string
   challengeCode: string
   winnerTeamName: string
   isWinner: boolean
@@ -74,6 +83,8 @@ export interface PushDisputeResolvedPayload {
 export interface PushChatMessagePayload {
   senderName: string
   messagePreview: string
+  challengingTeamName: string
+  challengedTeamName: string
   challengeCode: string
   chatId: string
 }
@@ -108,7 +119,7 @@ export async function sendPushEvent<E extends PushEvent>(
       const d = data as PushChallengeReceivedPayload
       payload = {
         title: '🎾 New Challenge!',
-        body:  `${d.challengingTeamName} has challenged your team (${d.challengeCode})`,
+        body:  `${d.challengingTeamName} has challenged ${d.challengedTeamName}`,
         url:   challengeUrl,
         tag:   `challenge-received-${d.challengeId}`,
         icon:  '/icons/icon-192.svg',
@@ -118,17 +129,18 @@ export async function sendPushEvent<E extends PushEvent>(
 
     case 'challenge_accepted': {
       const d = data as PushChallengeAcceptedPayload
+      const match = `${d.challengingTeamName} vs ${d.challengedTeamName}`
       payload = d.mode === 'slot'
         ? {
             title: '✅ Match Scheduled!',
-            body:  `${d.challengedTeamName} picked your slot — ${d.challengeCode} is confirmed`,
+            body:  `${match} — ${d.challengedTeamName} picked a slot`,
             url:   challengeUrl,
             tag:   `challenge-accepted-${d.challengeId}`,
             icon:  '/icons/icon-192.svg',
           }
         : {
             title: '🤝 Challenge Accepted',
-            body:  `${d.challengedTeamName} accepted ${d.challengeCode} — coordinate the time over WhatsApp`,
+            body:  `${match} — coordinate the match time over chat`,
             url:   challengeUrl,
             tag:   `challenge-accepted-${d.challengeId}`,
             icon:  '/icons/icon-192.svg',
@@ -148,7 +160,7 @@ export async function sendPushEvent<E extends PushEvent>(
       })()
       payload = {
         title: '📅 Match Scheduled',
-        body:  `${d.challengeCode} vs ${d.opponentName} — ${when}`,
+        body:  `${d.myTeamName} vs ${d.opponentName} — ${when}`,
         url:   challengeUrl,
         tag:   `match-scheduled-${d.challengeId}`,
         icon:  '/icons/icon-192.svg',
@@ -158,17 +170,18 @@ export async function sendPushEvent<E extends PushEvent>(
 
     case 'result_submitted': {
       const d = data as PushResultSubmittedPayload
+      const match = `${d.reporterTeamName} vs ${d.opponentTeamName}`
       payload = d.isReporter
         ? {
             title: '📊 Score Submitted',
-            body:  `${d.challengeCode}: waiting for the other team to verify`,
+            body:  `${match} — waiting for the other team to verify`,
             url:   challengeUrl,
             tag:   `result-${d.challengeId}`,
             icon:  '/icons/icon-192.svg',
           }
         : {
             title: '⚠️ Please Verify the Score',
-            body:  `${d.reporterTeamName} submitted a result for ${d.challengeCode}`,
+            body:  `${match} — ${d.reporterTeamName} submitted a result`,
             url:   challengeUrl,
             tag:   `result-${d.challengeId}`,
             icon:  '/icons/icon-192.svg',
@@ -180,7 +193,7 @@ export async function sendPushEvent<E extends PushEvent>(
       const d = data as PushChallengeDissolvedPayload
       payload = {
         title: '💨 Challenge Dissolved',
-        body:  `${d.challengeCode}: ${d.reason}`,
+        body:  `${d.challengingTeamName} vs ${d.challengedTeamName} — ${d.reason}`,
         url:   challengeUrl,
         tag:   `dissolved-${d.challengeId}`,
         icon:  '/icons/icon-192.svg',
@@ -190,17 +203,18 @@ export async function sendPushEvent<E extends PushEvent>(
 
     case 'score_disputed': {
       const d = data as PushScoreDisputedPayload
+      const match = `${d.disputerTeamName} vs ${d.opponentTeamName}`
       payload = d.isReporter
         ? {
             title: '⚠️ Score Disputed',
-            body:  `${d.disputerTeamName} has filed a counter-score for ${d.challengeCode}`,
+            body:  `${match} — ${d.disputerTeamName} has filed a counter-score`,
             url:   challengeUrl,
             tag:   `dispute-${d.challengeId}`,
             icon:  '/icons/icon-192.svg',
           }
         : {
             title: '✅ Dispute Filed',
-            body:  `Your counter-score for ${d.challengeCode} has been sent`,
+            body:  `${match} — your counter-score has been sent`,
             url:   challengeUrl,
             tag:   `dispute-${d.challengeId}`,
             icon:  '/icons/icon-192.svg',
@@ -210,17 +224,18 @@ export async function sendPushEvent<E extends PushEvent>(
 
     case 'dispute_resolved': {
       const d = data as PushDisputeResolvedPayload
+      const match = `${d.challengingTeamName} vs ${d.challengedTeamName}`
       payload = d.isWinner
         ? {
             title: '🏆 You Won!',
-            body:  `Dispute resolved for ${d.challengeCode} — ${d.winnerTeamName} wins`,
+            body:  `${match} — ${d.winnerTeamName} wins the dispute`,
             url:   challengeUrl,
             tag:   `dispute-resolved-${d.challengeId}`,
             icon:  '/icons/icon-192.svg',
           }
         : {
             title: '✅ Dispute Resolved',
-            body:  `The score dispute for ${d.challengeCode} has been settled`,
+            body:  `${match} — the score dispute has been settled`,
             url:   challengeUrl,
             tag:   `dispute-resolved-${d.challengeId}`,
             icon:  '/icons/icon-192.svg',
@@ -232,7 +247,7 @@ export async function sendPushEvent<E extends PushEvent>(
       const d = data as PushChatMessagePayload
       payload = {
         title: `💬 ${d.senderName}`,
-        body:  `${d.challengeCode}: ${d.messagePreview.slice(0, 100)}`,
+        body:  `${d.challengingTeamName} vs ${d.challengedTeamName}: ${d.messagePreview.slice(0, 100)}`,
         url:   `${appUrl()}/chat/${d.chatId}`,
         tag:   `chat-${d.chatId}`,
         icon:  '/icons/icon-192.svg',

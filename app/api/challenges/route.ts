@@ -246,6 +246,7 @@ export async function POST(request: NextRequest) {
 
       sendPushEvent('challenge_received', recipients, {
         challengingTeamName: challengingTeam.name,
+        challengedTeamName: challengedTeamData.name,
         challengeCode: challenge.challenge_code,
         challengeId: challenge.id,
       }).catch(() => {})

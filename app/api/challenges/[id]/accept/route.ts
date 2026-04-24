@@ -269,6 +269,7 @@ export async function POST(
 
       sendPushEvent('challenge_accepted', recipients, {
         challengedTeamName: challengedTeam!.name,
+        challengingTeamName: challengingTeamData.name,
         challengeCode: challenge.challenge_code,
         mode: acceptMode as 'open' | 'slot',
         challengeId: params.id,

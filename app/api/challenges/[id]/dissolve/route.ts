@@ -97,6 +97,8 @@ export async function POST(
 
       sendPushEvent('challenge_dissolved', allPlayerIds, {
         challengeCode: challenge.challenge_code,
+        challengingTeamName: challengingTeamData.name,
+        challengedTeamName: challengedTeamData.name,
         reason: reason ?? 'Dissolved by admin.',
         challengeId: params.id,
       }).catch(() => {})

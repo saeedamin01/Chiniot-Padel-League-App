@@ -172,6 +172,7 @@ export async function POST(
       sendPushEvent('match_scheduled', recipients, {
         challengeCode: challenge.challenge_code,
         opponentName: submittingTeam.name,
+        myTeamName: confirmingTeam.name,
         scheduledTime: confirmedDate.toISOString(),
         challengeId: params.id,
       }).catch(() => {})

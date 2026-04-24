@@ -198,6 +198,7 @@ export async function POST(request: NextRequest) {
 
     sendPushEvent('result_submitted', opposingPlayerIds, {
       reporterTeamName: reportingTeam?.name ?? 'Your opponent',
+      opponentTeamName: reportingTeam?.name ?? 'Your opponent',
       challengeCode: challenge.challenge_code,
       isReporter: false,
       challengeId: challengeId,
@@ -220,6 +221,7 @@ export async function POST(request: NextRequest) {
 
       sendPushEvent('result_submitted', reporterIds, {
         reporterTeamName: reportingTeam?.name ?? 'Your team',
+        opponentTeamName: opposingTeam.name,
         challengeCode: challenge.challenge_code,
         isReporter: true,
         challengeId: challengeId,
