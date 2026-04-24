@@ -242,8 +242,16 @@ export default function LadderPage() {
 
         const maxPositionsAbove = settingsRes.data?.challenge_positions_above ?? 3
         const tiers: Tier[] = tiersRes.data || []
-        const userTeamIdSet = new Set(activeTeam ? [activeTeam.id] : [])
         const allPositions: any[] = positionsRes.data || []
+
+        // Build the set of ALL teams the current user is a player on (not just the active one).
+        // This prevents a user from challenging their own other team when switching between teams.
+        const userTeamIdSet = new Set(
+          allPositions
+            .filter(p => p.team?.player1?.id === user.id || p.team?.player2?.id === user.id)
+            .map(p => p.team_id)
+            .filter(Boolean)
+        )
         const allTeamIds = allPositions.map(p => p.team_id).filter(Boolean) as string[]
 
         const teamNameMap = new Map<string, string>()
