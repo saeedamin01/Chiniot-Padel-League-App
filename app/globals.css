@@ -493,14 +493,14 @@ html:not(.dark) .from-slate-400\/10      { --tw-gradient-from: hsl(214 14% 96%) 
   .pwa-team-bar { display: none; }
 }
 
-/* Main content: padding accounts for fixed header + bottom nav on mobile */
+/* Main content: sticky navbar is in normal flow so no padding-top needed.
+   Only padding-bottom to clear the fixed bottom nav. */
 .pwa-main {
-  padding-top: calc(3.5rem + env(safe-area-inset-top, 0px));
-  padding-bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px));
+  padding-top: 0;
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
 }
 @media (min-width: 768px) {
   .pwa-main {
-    padding-top: 0;
     padding-bottom: 0;
   }
 }
