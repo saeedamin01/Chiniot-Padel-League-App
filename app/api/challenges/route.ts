@@ -48,14 +48,24 @@ export async function POST(request: NextRequest) {
     const settings = season.league_settings
     const adminClient = createAdminClient()
 
-    // Validate slots are on 30-minute boundaries
+    // Validate slots
+    const now30 = new Date()
+    const matchDeadline = addDays(now30, settings.challenge_window_days ?? 10)
     const slots30 = [slot1, slot2, slot3].map(s => new Date(s))
+
     for (const [i, d] of slots30.entries()) {
       if (isNaN(d.getTime())) {
         return NextResponse.json({ error: `Slot ${i + 1} is not a valid date/time` }, { status: 400 })
       }
       if (d.getMinutes() % 30 !== 0 || d.getSeconds() !== 0) {
         return NextResponse.json({ error: `Slot ${i + 1} must be on a 30-minute boundary (e.g. 18:00 or 18:30)` }, { status: 400 })
+      }
+      if (d <= now30) {
+        return NextResponse.json({ error: `Slot ${i + 1} must be in the future` }, { status: 400 })
+      }
+      if (d > matchDeadline) {
+        const fmtDeadline = matchDeadline.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+        return NextResponse.json({ error: `Slot ${i + 1} must be within the ${settings.challenge_window_days ?? 10}-day match window (on or before ${fmtDeadline})` }, { status: 400 })
       }
     }
 

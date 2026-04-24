@@ -15,6 +15,7 @@ export interface DateTimeSlotPickerProps {
   value: string
   onChange: (value: string) => void
   minDate?: string
+  maxDate?: string
   className?: string
   disabled?: boolean
 }
@@ -81,6 +82,7 @@ export function DateTimeSlotPicker({
   value,
   onChange,
   minDate,
+  maxDate,
   className = '',
   disabled = false,
 }: DateTimeSlotPickerProps) {
@@ -110,6 +112,7 @@ export function DateTimeSlotPicker({
         type="date"
         value={datePart}
         min={minDate}
+        max={maxDate}
         disabled={disabled}
         onChange={e => onDateChange(e.target.value)}
         lang="en-GB"

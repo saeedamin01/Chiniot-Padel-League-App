@@ -93,6 +93,7 @@ export default function ChallengesPage() {
     eveningStartHour: 17,
     eveningStartMinute: 30,
     eveningEndHour: 21,
+    challengeWindowDays: 10,
   })
 
   const fetchChallenges = useCallback(async (teamId: string) => {
@@ -104,7 +105,7 @@ export default function ChallengesPage() {
       // Load slot requirements
       const { data: settings } = await supabase
         .from('league_settings')
-        .select('slot_evening_count, slot_weekend_count, slot_evening_start_hour, slot_evening_start_minute, slot_evening_end_hour')
+        .select('slot_evening_count, slot_weekend_count, slot_evening_start_hour, slot_evening_start_minute, slot_evening_end_hour, challenge_window_days')
         .eq('season_id', season.id)
         .single()
       if (settings) {
@@ -114,6 +115,7 @@ export default function ChallengesPage() {
           eveningStartHour: settings.slot_evening_start_hour ?? 17,
           eveningStartMinute: settings.slot_evening_start_minute ?? 30,
           eveningEndHour: settings.slot_evening_end_hour ?? 21,
+          challengeWindowDays: (settings as any).challenge_window_days ?? 10,
         })
       }
 
@@ -258,11 +260,29 @@ export default function ChallengesPage() {
 
   function validateSlots(s1: string, s2: string, s3: string): string | null {
     const slots = [s1, s2, s3].map(s => new Date(s))
+    const now = new Date()
+    const windowDays = slotReqs.challengeWindowDays ?? 10
+    const matchDeadline = new Date(now.getTime() + windowDays * 24 * 60 * 60 * 1000)
 
     // Invalid date check — catches bad year entry like 252026
     for (const [i, d] of slots.entries()) {
       if (isNaN(d.getTime())) {
         return `Slot ${i + 1} has an invalid date — please check the date and try again.`
+      }
+    }
+
+    // Must be in the future
+    for (const [i, d] of slots.entries()) {
+      if (d <= now) {
+        return `Slot ${i + 1} must be in the future.`
+      }
+    }
+
+    // Must be within the match window
+    const fmtDeadline = matchDeadline.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    for (const [i, d] of slots.entries()) {
+      if (d > matchDeadline) {
+        return `Slot ${i + 1} is outside the ${windowDays}-day match window — all slots must be on or before ${fmtDeadline}.`
       }
     }
 
@@ -1180,29 +1200,39 @@ export default function ChallengesPage() {
                 <p className="text-xs text-slate-500 pt-1">Note: Friday is treated as a weekday</p>
               </div>
 
-              {/* Slot 1 */}
-              <div>
-                <Label className="text-slate-300 text-sm">Slot 1 <span className="text-red-400">*</span></Label>
-                <div className="mt-1">
-                  <DateTimeSlotPicker value={slot1} onChange={setSlot1} />
-                </div>
-              </div>
+              {(() => {
+                const today = new Date()
+                const maxDate = new Date(today.getTime() + (slotReqs.challengeWindowDays ?? 10) * 24 * 60 * 60 * 1000)
+                const minDateStr = today.toISOString().slice(0, 10)
+                const maxDateStr = maxDate.toISOString().slice(0, 10)
+                return (
+                  <>
+                    {/* Slot 1 */}
+                    <div>
+                      <Label className="text-slate-300 text-sm">Slot 1 <span className="text-red-400">*</span></Label>
+                      <div className="mt-1">
+                        <DateTimeSlotPicker value={slot1} onChange={setSlot1} minDate={minDateStr} maxDate={maxDateStr} />
+                      </div>
+                    </div>
 
-              {/* Slot 2 */}
-              <div>
-                <Label className="text-slate-300 text-sm">Slot 2 <span className="text-red-400">*</span></Label>
-                <div className="mt-1">
-                  <DateTimeSlotPicker value={slot2} onChange={setSlot2} />
-                </div>
-              </div>
+                    {/* Slot 2 */}
+                    <div>
+                      <Label className="text-slate-300 text-sm">Slot 2 <span className="text-red-400">*</span></Label>
+                      <div className="mt-1">
+                        <DateTimeSlotPicker value={slot2} onChange={setSlot2} minDate={minDateStr} maxDate={maxDateStr} />
+                      </div>
+                    </div>
 
-              {/* Slot 3 */}
-              <div>
-                <Label className="text-slate-300 text-sm">Slot 3 <span className="text-red-400">*</span></Label>
-                <div className="mt-1">
-                  <DateTimeSlotPicker value={slot3} onChange={setSlot3} />
-                </div>
-              </div>
+                    {/* Slot 3 */}
+                    <div>
+                      <Label className="text-slate-300 text-sm">Slot 3 <span className="text-red-400">*</span></Label>
+                      <div className="mt-1">
+                        <DateTimeSlotPicker value={slot3} onChange={setSlot3} minDate={minDateStr} maxDate={maxDateStr} />
+                      </div>
+                    </div>
+                  </>
+                )
+              })()}
 
               {/* How scheduling works */}
               <div className="p-3 bg-slate-800/60 border border-slate-600/50 rounded-lg text-xs text-slate-400 space-y-1">
