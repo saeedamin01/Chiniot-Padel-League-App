@@ -232,20 +232,47 @@ export default function ChatThreadPage() {
       setMessages(enriched)
       setLoading(false)
 
-      // Build player name map for "Seen by"
+      // Build player name map for "Seen by" — use admin client via API route isn't
+      // available here, so we fetch via the user's session (RLS allows reading players)
       const playerIds = chatData.allowed_player_ids as string[]
       const { data: players } = await supabase
         .from('players')
         .select('id, name')
         .in('id', playerIds)
-      if (players) {
-        const map: Record<string, string> = {}
-        for (const p of players) map[p.id] = p.name.split(' ')[0] // first name only
-        setPlayerNames(map)
-      }
 
+      const map: Record<string, string> = {}
+      if (players) {
+        for (const p of players) map[p.id] = p.name.split(' ')[0]
+      }
+      // Always include current user in the map
+      map[user.id] = 'You'
+      setPlayerNames(map)
+
+      // Mark read and then refresh messages so read_by reflects current state
       await supabase.rpc('mark_chat_messages_read', { p_chat_id: chatId })
       refreshUnread()
+
+      // Re-fetch messages so read_by includes the current user
+      const { data: freshMsgs } = await supabase
+        .from('chat_messages')
+        .select(`
+          id, chat_id, sender_id, content, read_by, reactions,
+          reply_to_message_id, created_at,
+          sender:players!chat_messages_sender_id_fkey ( id, name, avatar_url )
+        `)
+        .eq('chat_id', chatId)
+        .order('created_at', { ascending: true })
+
+      if (freshMsgs) {
+        const freshArr = freshMsgs as unknown as ChatMessage[]
+        const freshMap: Record<string, ChatMessage> = {}
+        for (const m of freshArr) freshMap[m.id] = m
+        setMessages(freshArr.map(m => {
+          if (!m.reply_to_message_id) return m
+          const parent = freshMap[m.reply_to_message_id]
+          return { ...m, reply_to: parent ? { id: parent.id, content: parent.content, sender: parent.sender ?? null } : null }
+        }))
+      }
     }
 
     init()
@@ -479,9 +506,18 @@ export default function ChatThreadPage() {
 
   const challengeRef = matchInfo ? `/challenges/${matchInfo.challengeId}` : '#'
   const allPlayerIds = (chat?.allowed_player_ids as string[] | undefined) ?? []
+  const isClosed = matchInfo ? ['played', 'forfeited', 'dissolved'].includes(matchInfo.status) : false
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-slate-50 dark:bg-slate-950 overflow-hidden">
+    // Fixed positioning escapes pwa-main padding so the chat fills exactly the
+    // space between the sticky navbar and the fixed bottom nav.
+    <div
+      className="fixed left-0 right-0 flex flex-col bg-slate-50 dark:bg-slate-950 overflow-hidden"
+      style={{
+        top:    'calc(3.5rem + env(safe-area-inset-top, 0px))',
+        bottom: 'calc(4rem + env(safe-area-inset-bottom, 0px))',
+      }}
+    >
 
       {/* ── Fixed header ── */}
       <div className="shrink-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700/50 z-10">
@@ -637,7 +673,8 @@ export default function ChatThreadPage() {
           {/* Message list */}
           <div
             ref={messagesContainerRef}
-            className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5"
+            className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 space-y-0.5"
+            style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
             onClick={() => reactionPickerFor && setReactionPickerFor(null)}
           >
             {loading && (
@@ -814,28 +851,36 @@ export default function ChatThreadPage() {
             </div>
           )}
 
-          {/* ── Input bar ── */}
-          <div className="shrink-0 px-3 py-2.5 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700/50 pwa-safe-bottom">
-            <form onSubmit={handleSend} className="flex items-end gap-2">
-              <textarea
-                ref={inputRef}
-                value={content}
-                onChange={e => setContent(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Message…"
-                rows={1}
-                className="flex-1 resize-none rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 max-h-32 leading-snug"
-                style={{ scrollbarWidth: 'none' }}
-              />
-              <button
-                type="submit"
-                disabled={!content.trim() || sending}
-                className="w-10 h-10 rounded-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors shrink-0"
-              >
-                {sending ? <Loader2 className="h-4 w-4 animate-spin text-white" /> : <Send className="h-4 w-4 text-white" />}
-              </button>
-            </form>
-          </div>
+          {/* ── Input bar / closed banner ── */}
+          {isClosed ? (
+            <div className="shrink-0 px-4 py-3 bg-slate-100 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-700/50 text-center">
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                This conversation has ended · {matchInfo ? statusLabel(matchInfo.status) : ''}
+              </p>
+            </div>
+          ) : (
+            <div className="shrink-0 px-3 py-2.5 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700/50">
+              <form onSubmit={handleSend} className="flex items-end gap-2">
+                <textarea
+                  ref={inputRef}
+                  value={content}
+                  onChange={e => setContent(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Message…"
+                  rows={1}
+                  className="flex-1 resize-none rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 max-h-32 leading-snug"
+                  style={{ scrollbarWidth: 'none' } as React.CSSProperties}
+                />
+                <button
+                  type="submit"
+                  disabled={!content.trim() || sending}
+                  className="w-10 h-10 rounded-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors shrink-0"
+                >
+                  {sending ? <Loader2 className="h-4 w-4 animate-spin text-white" /> : <Send className="h-4 w-4 text-white" />}
+                </button>
+              </form>
+            </div>
+          )}
         </>
       )}
     </div>
