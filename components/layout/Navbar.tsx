@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Trophy, LogOut, Settings, Shield, ChevronDown, Users, Check } from 'lucide-react'
@@ -62,6 +63,8 @@ const TIER_TEXT: Record<string, string> = {
 function TeamSwitcher() {
   const { teams, activeTeam, switchTeam } = useTeam()
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
 
   if (!activeTeam) return null
 
@@ -139,14 +142,16 @@ function TeamSwitcher() {
         </div>
       )}
 
-      {/* ── Mobile bottom sheet ── */}
-      {sheetOpen && (
+      {/* ── Mobile bottom sheet — rendered via portal at document.body to escape
+           the navbar's backdrop-filter stacking context ── */}
+      {mounted && sheetOpen && createPortal(
         <>
           <div
             className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-[2px]"
             onClick={() => setSheetOpen(false)}
           />
-          <div className="fixed bottom-0 left-0 right-0 z-[70] rounded-t-2xl bg-white border-t border-slate-200 shadow-2xl dark:bg-slate-900 dark:border-slate-700/60">
+          <div className="fixed bottom-0 left-0 right-0 z-[70] rounded-t-2xl bg-white border-t border-slate-200 shadow-2xl dark:bg-slate-900 dark:border-slate-700/60"
+            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
             <div className="flex justify-center pt-3 pb-2">
               <div className="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-600" />
             </div>
@@ -204,7 +209,8 @@ function TeamSwitcher() {
             </div>
             <div className="h-5" />
           </div>
-        </>
+        </>,
+        document.body
       )}
     </>
   )
