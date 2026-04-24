@@ -34,6 +34,17 @@ self.addEventListener('push', (event: any) => {
   event.waitUntil((self as any).registration.showNotification(title, options))
 })
 
+// ─── Clear all notifications when the app comes into focus ───────────────────
+// Any open CPL window gaining focus dismisses all pending notifications,
+// matching the behaviour of WhatsApp and most native apps.
+self.addEventListener('message', (event: any) => {
+  if (event.data?.type === 'APP_FOCUSED') {
+    (self as any).registration.getNotifications().then((notifications: any[]) => {
+      notifications.forEach((n: any) => n.close())
+    })
+  }
+})
+
 // ─── Notification clicked ─────────────────────────────────────────────────────
 self.addEventListener('notificationclick', (event: any) => {
   event.notification.close()

@@ -25,6 +25,23 @@ export default function PlayerLayout({ children }: { children: React.ReactNode }
   const router = useRouter()
   const supabase = createClient()
 
+  // Clear all push notifications when the app window comes into focus
+  useEffect(() => {
+    const clearNotifications = () => {
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'APP_FOCUSED' })
+      }
+    }
+    clearNotifications() // clear on mount (app opened)
+    window.addEventListener('focus', clearNotifications)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') clearNotifications()
+    })
+    return () => {
+      window.removeEventListener('focus', clearNotifications)
+    }
+  }, [])
+
   useEffect(() => {
     const fetchUserData = async () => {
       try {
