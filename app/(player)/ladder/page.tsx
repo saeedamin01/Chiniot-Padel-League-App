@@ -585,7 +585,7 @@ export default function LadderPage() {
 
                   // Card background
                   const cardBg = pos.isMyTeam
-                    ? 'bg-emerald-50 dark:bg-emerald-500/8'
+                    ? 'bg-emerald-100 border-l-4 border-emerald-500 dark:bg-emerald-500/15 dark:border-emerald-500/60'
                     : isFrozen
                     ? 'bg-sky-50/60 dark:bg-blue-500/5'
                     : 'bg-white dark:bg-slate-900/30 hover:bg-slate-50 dark:hover:bg-slate-800/50'

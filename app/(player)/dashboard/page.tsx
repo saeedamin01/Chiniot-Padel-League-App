@@ -555,31 +555,15 @@ export default function DashboardPage() {
   const opponent = (c: DashboardChallenge) =>
     c.challenging_team_id === selectedTeamId ? c.challenged_team : c.challenging_team
 
+  // OppContact: shows player names only — WA links are visible on the challenge detail page
   const OppContact = ({ c }: { c: DashboardChallenge }) => {
     const opp = opponent(c)
     const players: PlayerInfo[] = [(opp as any)?.player1, (opp as any)?.player2].filter(Boolean)
     if (players.length === 0) return null
     return (
-      <div className="flex items-center gap-2 flex-wrap mt-1">
-        {players.map((p, i) => {
-          const raw = p.phone?.replace(/\D/g, '') ?? ''
-          const waNumber = raw.startsWith('0') ? '92' + raw.slice(1) : raw
-          const waUrl = waNumber ? `https://wa.me/${waNumber}?text=${encodeURIComponent(`Hi! Reaching out about our CPL challenge ${c.challenge_code} 🎾`)}` : null
-          return (
-            <span key={i} className="inline-flex items-center gap-1.5">
-              <span className="text-sm text-slate-600 dark:text-slate-400">{p.name}</span>
-              {waUrl && (
-                <a href={waUrl} target="_blank" rel="noopener noreferrer"
-                  onClick={e => e.stopPropagation()}
-                  className="inline-flex items-center gap-0.5 text-[11px] px-1.5 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-400 dark:border-emerald-500/20 transition-colors">
-                  <MessageCircle className="h-3 w-3" />WA
-                </a>
-              )}
-              {i < players.length - 1 && <span className="text-slate-300 dark:text-slate-600">&amp;</span>}
-            </span>
-          )
-        })}
-      </div>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+        {players.map(p => p.name).join(' & ')}
+      </p>
     )
   }
 
@@ -589,21 +573,21 @@ export default function DashboardPage() {
       <button
         onClick={() => openChat(id)}
         disabled={chatLoading === id}
-        className="flex items-center gap-1.5 justify-center text-xs text-slate-400 hover:text-emerald-400 dark:hover:text-emerald-400 transition-colors mt-2 w-full py-0.5"
+        className={`flex items-center justify-center gap-2 mt-2 w-full py-2 rounded-xl text-sm font-medium transition-colors ${
+          unread > 0
+            ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
+            : 'bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-700/60 dark:hover:bg-slate-700 dark:text-slate-300'
+        }`}
       >
         {chatLoading === id
-          ? <Loader2 className="h-3 w-3 animate-spin" />
-          : (
-            <span className="relative">
-              <MessageCircle className="h-3 w-3" />
-              {unread > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] px-0.5 rounded-full bg-emerald-500 text-white text-[9px] font-bold flex items-center justify-center">
-                  {unread > 9 ? '9+' : unread}
-                </span>
-              )}
-            </span>
-          )}
-        Open Chat{unread > 0 ? ` (${unread})` : ''}
+          ? <Loader2 className="h-4 w-4 animate-spin" />
+          : <MessageCircle className="h-4 w-4" />}
+        Chat
+        {unread > 0 && (
+          <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-white text-emerald-600 text-[11px] font-bold">
+            {unread > 9 ? '9+' : unread}
+          </span>
+        )}
       </button>
     )
   }
