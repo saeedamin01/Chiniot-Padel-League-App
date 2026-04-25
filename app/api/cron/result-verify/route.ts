@@ -160,10 +160,78 @@ export async function GET(request: NextRequest) {
       processed++
     }
 
+    // ── Step 3: auto-approve disputed results whose dispute_deadline has expired ──
+    // When the pending team hasn't acted within 60 minutes, approve the current
+    // disputed_score as the final result (whichever team last filed a counter-score wins).
+    const { data: expiredDisputes } = await adminClient
+      .from('match_results')
+      .select('id, challenge_id, disputed_score, dispute_round')
+      .eq('season_id', season.id)
+      .is('verified_at', null)
+      .eq('auto_verified', false)
+      .not('disputed_at', 'is', null)
+      .not('dispute_deadline', 'is', null)
+      .lt('dispute_deadline', now.toISOString())
+      .is('dispute_flagged_at', null)   // skip escalated ones (admin resolves those)
+      .is('dispute_resolved_at', null)
+
+    let disputeAutoApproved = 0
+
+    for (const dr of (expiredDisputes ?? [])) {
+      const ds = dr.disputed_score as any
+      if (!ds?.winner_team_id) continue
+
+      const winnerTeamId = ds.winner_team_id
+      const { data: challengeRow } = await adminClient
+        .from('challenges')
+        .select('id, challenging_team_id, challenged_team_id, status')
+        .eq('id', dr.challenge_id)
+        .single()
+
+      if (!challengeRow || challengeRow.status !== 'result_pending') continue
+
+      const loserTeamId = winnerTeamId === challengeRow.challenging_team_id
+        ? challengeRow.challenged_team_id
+        : challengeRow.challenging_team_id
+
+      // Apply the disputed_score as the final result
+      await adminClient.from('match_results').update({
+        winner_team_id:           winnerTeamId,
+        loser_team_id:            loserTeamId,
+        set1_challenger:          ds.set1_challenger,
+        set1_challenged:          ds.set1_challenged,
+        set2_challenger:          ds.set2_challenger,
+        set2_challenged:          ds.set2_challenged,
+        supertiebreak_challenger: ds.supertiebreak_challenger ?? null,
+        supertiebreak_challenged: ds.supertiebreak_challenged ?? null,
+        verified_at:              now.toISOString(),
+        auto_verified:            true,
+        dispute_resolved_at:      now.toISOString(),
+        dispute_pending_team_id:  null,
+        dispute_deadline:         null,
+      }).eq('id', dr.id)
+
+      await processMatchResult(dr.challenge_id, winnerTeamId, loserTeamId)
+
+      await adminClient.from('challenges').update({ status: 'played' }).eq('id', dr.challenge_id)
+
+      await adminClient.from('audit_log').insert({
+        actor_email: 'system',
+        action_type: 'dispute_auto_approved',
+        entity_type: 'match_result',
+        entity_id:   dr.id,
+        notes:       `Round ${dr.dispute_round} dispute auto-approved after deadline expiry`,
+        created_at:  now.toISOString(),
+      })
+
+      disputeAutoApproved++
+    }
+
     return NextResponse.json({
       success: true,
-      message: `Auto-verified ${processed} result(s)`,
+      message: `Auto-verified ${processed} result(s), auto-approved ${disputeAutoApproved} dispute(s)`,
       processed,
+      disputeAutoApproved,
     })
   } catch (err) {
     console.error('Cron result-verify error:', err)

@@ -88,9 +88,10 @@ export async function POST(
       return NextResponse.json({ error: 'teamId is required for accept mode' }, { status: 400 })
     }
 
-    // Verify caller is the original reporter
-    if (teamId !== result.reported_by_team_id) {
-      return NextResponse.json({ error: 'Only the original score reporter can accept the counter-score' }, { status: 403 })
+    // Verify it's the pending team's turn to accept
+    const pendingTeamId = result.dispute_pending_team_id ?? result.reported_by_team_id
+    if (teamId !== pendingTeamId) {
+      return NextResponse.json({ error: 'It is not your turn to accept the counter-score' }, { status: 403 })
     }
 
     // Verify user is actually on that team
