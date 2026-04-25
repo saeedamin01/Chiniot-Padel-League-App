@@ -244,14 +244,18 @@ export default function LadderPage() {
         const tiers: Tier[] = tiersRes.data || []
         const allPositions: any[] = positionsRes.data || []
 
-        // Build the set of ALL teams the current user is a player on (not just the active one).
-        // This prevents a user from challenging their own other team when switching between teams.
+        // Build the set of ALL teams the current user is a player on.
+        // Used to prevent challenging your own other teams regardless of which team is active.
         const userTeamIdSet = new Set(
           allPositions
             .filter(p => p.team?.player1?.id === user.id || p.team?.player2?.id === user.id)
             .map(p => p.team_id)
             .filter(Boolean)
         )
+
+        // The actively selected team from the team switcher — only this team is
+        // highlighted with "You" and can initiate challenges.
+        const activeTeamId = activeTeam?.id ?? null
         const allTeamIds = allPositions.map(p => p.team_id).filter(Boolean) as string[]
 
         const teamNameMap = new Map<string, string>()
@@ -345,7 +349,10 @@ export default function LadderPage() {
           teamTicketMap.get(tk.team_id)!.push({ id: tk.id, ticket_type: tk.ticket_type })
         }
 
-        const myPositions = allPositions.filter(p => userTeamIdSet.has(p.team_id))
+        // Only the active team can initiate challenges — restrict myPositions to it.
+        const myPositions = activeTeamId
+          ? allPositions.filter(p => p.team_id === activeTeamId)
+          : []
         const busyMyTeamIds = new Set(
           myPositions.map(p => p.team_id).filter(id => {
             const cis = challengeMap.get(id) ?? []
@@ -380,7 +387,10 @@ export default function LadderPage() {
               continue
             }
 
-            const isMyTeam   = userTeamIdSet.has(pos.team_id)
+            // isMyTeam = only the actively selected team (shown with "You" badge)
+            const isMyTeam      = pos.team_id === activeTeamId
+            // isAnyMyTeam = any team the user is on (blocks self-challenges)
+            const isAnyMyTeam   = userTeamIdSet.has(pos.team_id)
             const isFrozen   = pos.status === 'frozen'
             const challenges = challengeMap.get(pos.team_id) ?? []
             const stats      = statsMap.get(pos.team_id) ?? { wins: 0, losses: 0, played: 0, recentForm: [], rankGained: 0, winStreak: 0 }
@@ -424,7 +434,7 @@ export default function LadderPage() {
               (ci.type === 'received' && ACCEPTED_STATUSES.includes(ci.status)) ||
               ci.status === 'result_pending'
             )
-            const canChallenge = !isMyTeam && !isFrozen && !targetIsLocked && !!eligibleMyTeam
+            const canChallenge = !isAnyMyTeam && !isFrozen && !targetIsLocked && !!eligibleMyTeam
 
             positions.push({ rank, status: pos.status as 'active' | 'frozen', team: pos.team, tier, team_id: pos.team_id, isMyTeam, canChallenge, requiresTicket, ticketType, challenges, stats, tickets })
           }

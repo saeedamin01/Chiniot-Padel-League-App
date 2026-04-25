@@ -1282,6 +1282,11 @@ export default function DashboardPage() {
                     </p>
                     <OppContact c={c} />
                     <p className="text-sm text-slate-500 mt-0.5">You entered the time — waiting for them to confirm</p>
+                    {c.confirmed_time && (
+                      <p className="text-sm font-medium text-slate-700 dark:text-slate-200 mt-1">
+                        📅 {fmtDate(c.confirmed_time)}
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-col items-end gap-2 shrink-0">
                     <Link href={`/challenges/${c.id}`}>
