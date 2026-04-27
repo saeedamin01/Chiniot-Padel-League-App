@@ -227,20 +227,6 @@ export default function ChallengeDetailPage() {
         return
       }
 
-      // Access control — only teams involved in the challenge can view it
-      const involvedTeamIds = [challengeData.challenging_team_id, challengeData.challenged_team_id]
-      const userTeamIdList = await supabase
-        .from('teams')
-        .select('id')
-        .or(`player1_id.eq.${user.id},player2_id.eq.${user.id}`)
-      const userTeamIdSet = new Set((userTeamIdList.data ?? []).map((t) => t.id))
-      const isInvolved = involvedTeamIds.some((id) => userTeamIdSet.has(id))
-      if (!isInvolved) {
-        toast.error('You are not involved in this challenge')
-        router.push('/dashboard')
-        return
-      }
-
       // Trigger auto-confirm server-side if the confirmation window has expired.
       // Covers both 'accepted' (legacy slot-pick) and 'time_pending_confirm' (open-accept flow).
       if (

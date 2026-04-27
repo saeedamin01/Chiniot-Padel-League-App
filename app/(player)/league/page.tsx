@@ -406,9 +406,14 @@ function UpcomingTab({ challenges }: { challenges: ChallengeRow[] }) {
                 <span className="text-xs font-semibold text-blue-500 dark:text-blue-400 uppercase tracking-wide">Upcoming</span>
                 {c.tier && <TierPill name={c.tier.name} />}
               </div>
-              {matchAt && (
-                <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">{fmtDateTime(matchAt)}</span>
-              )}
+              <div className="flex items-center gap-3">
+                {matchAt && (
+                  <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">{fmtDateTime(matchAt)}</span>
+                )}
+                <Link href={`/challenges/${c.id}`} className="flex items-center gap-1 text-xs text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-200 font-semibold transition-colors shrink-0">
+                  View <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
             </div>
             <div className="flex items-center gap-4">
               <div className="flex-1 text-center">
@@ -544,40 +549,45 @@ function LiveTab({ challenges }: { challenges: ChallengeRow[] }) {
       {challenges.map(c => {
         const sl = statusLabel[c.status] ?? { label: c.status, color: 'text-slate-400' }
         return (
-          <Card key={c.id} className="bg-white dark:bg-slate-800/60 border-amber-200 dark:border-amber-500/20 p-4 hover:border-amber-400 dark:hover:border-amber-500/40 transition-colors">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-2.5">
-                  <div className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+          <Link key={c.id} href={`/challenges/${c.id}`} className="block group">
+            <Card className="bg-white dark:bg-slate-800/60 border-amber-200 dark:border-amber-500/20 p-4 hover:border-amber-400 dark:hover:border-amber-500/40 transition-colors">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <div className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                    </div>
+                    <span className={`text-xs font-semibold ${sl.color}`}>{sl.label}</span>
+                    {c.tier && <TierPill name={c.tier.name} />}
                   </div>
-                  <span className={`text-xs font-semibold ${sl.color}`}>{sl.label}</span>
-                  {c.tier && <TierPill name={c.tier.name} />}
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-slate-900 dark:text-white text-sm truncate group-hover:text-amber-600 dark:group-hover:text-amber-300 transition-colors">
+                        {c.challenging_team.name}
+                      </p>
+                      {playerNames(c.challenging_team) && (
+                        <p className="text-[11px] text-slate-500 truncate">{playerNames(c.challenging_team)}</p>
+                      )}
+                    </div>
+                    <span className="text-slate-400 text-xs font-bold shrink-0">vs</span>
+                    <div className="flex-1 min-w-0 text-right">
+                      <p className="font-semibold text-slate-900 dark:text-white text-sm truncate group-hover:text-amber-600 dark:group-hover:text-amber-300 transition-colors">
+                        {c.challenged_team.name}
+                      </p>
+                      {playerNames(c.challenged_team) && (
+                        <p className="text-[11px] text-slate-500 truncate">{playerNames(c.challenged_team)}</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <Link href={`/teams/${c.challenging_team.id}`} className="font-semibold text-slate-900 dark:text-white hover:text-amber-600 dark:hover:text-amber-300 transition-colors text-sm truncate block">
-                      {c.challenging_team.name}
-                    </Link>
-                    {playerNames(c.challenging_team) && (
-                      <p className="text-[11px] text-slate-500 truncate">{playerNames(c.challenging_team)}</p>
-                    )}
-                  </div>
-                  <span className="text-slate-400 text-xs font-bold shrink-0">vs</span>
-                  <div className="flex-1 min-w-0 text-right">
-                    <Link href={`/teams/${c.challenged_team.id}`} className="font-semibold text-slate-900 dark:text-white hover:text-amber-600 dark:hover:text-amber-300 transition-colors text-sm truncate block">
-                      {c.challenged_team.name}
-                    </Link>
-                    {playerNames(c.challenged_team) && (
-                      <p className="text-[11px] text-slate-500 truncate">{playerNames(c.challenged_team)}</p>
-                    )}
-                  </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className="text-[11px] text-slate-500">{timeAgo(c.created_at)}</span>
+                  <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-amber-400 transition-colors" />
                 </div>
               </div>
-              <span className="text-[11px] text-slate-500 shrink-0">{timeAgo(c.created_at)}</span>
-            </div>
-          </Card>
+            </Card>
+          </Link>
         )
       })}
     </div>
