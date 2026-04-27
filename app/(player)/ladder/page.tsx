@@ -432,12 +432,13 @@ export default function LadderPage() {
             const eligibleMyTeam = normalEligible || ticketEligibleTeam
             const requiresTicket = !normalEligible && !!ticketEligibleTeam
             const ticketType     = requiresTicket ? resolvedTicketType : null
+            // A team is only unavailable if they RECEIVED a challenge from below and accepted it.
+            // A team that SENT a challenge upward is still open to be challenged.
             const targetIsLocked = challenges.some(ci =>
-              (ci.type === 'received' && ACCEPTED_STATUSES.includes(ci.status)) ||
-              ci.status === 'result_pending'
+              ci.type === 'received' && ACCEPTED_STATUSES.includes(ci.status)
             )
             const canChallenge = !isAnyMyTeam && !isFrozen && !targetIsLocked && !!eligibleMyTeam
-            // Show "Busy" pill when my team is in range but can't challenge because the target is locked
+            // Show "Unavailable" pill when my team is in range but target is locked by a received challenge
             const lockedForMe  = !isAnyMyTeam && !isFrozen && targetIsLocked && !!eligibleMyTeam
 
             positions.push({ rank, status: pos.status as 'active' | 'frozen', team: pos.team, tier, team_id: pos.team_id, isMyTeam, canChallenge, lockedForMe, requiresTicket, ticketType, challenges, stats, tickets })
@@ -685,7 +686,7 @@ export default function LadderPage() {
                           {/* Challenge button / Busy indicator */}
                           {pos.lockedForMe && (
                             <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-200/70 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-600/50">
-                              Busy
+                              Unavailable
                             </span>
                           )}
                           {pos.canChallenge && (
