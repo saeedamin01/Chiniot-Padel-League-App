@@ -2231,6 +2231,11 @@ export default function ChallengeDetailPage() {
                               <span className="text-slate-600 italic">—</span>
                             )}
                           </div>
+                          {ev.data?.reason && (
+                            <p className="text-xs text-slate-400 mt-1 italic">
+                              {String(ev.data.reason)}
+                            </p>
+                          )}
                         </div>
                       </li>
                     )

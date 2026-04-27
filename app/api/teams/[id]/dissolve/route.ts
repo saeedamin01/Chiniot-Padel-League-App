@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
+import { logChallengeEvent } from '@/lib/challenges/events'
 
 export const dynamic = 'force-dynamic'
 
@@ -64,11 +65,19 @@ export async function POST(
       .in('status', ['pending', 'scheduled'])
 
     if (activeChallenges) {
+      const dissolveReason = `${team.name} was dissolved by an admin.`
       for (const challenge of activeChallenges) {
         await adminClient
           .from('challenges')
-          .update({ status: 'dissolved' })
+          .update({ status: 'dissolved', dissolved_reason: dissolveReason })
           .eq('id', challenge.id)
+        await logChallengeEvent({
+          challengeId: challenge.id,
+          eventType: 'dissolved',
+          actorId: user.id,
+          actorRole: 'admin',
+          data: { reason: dissolveReason },
+        })
       }
     }
 

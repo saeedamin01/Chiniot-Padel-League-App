@@ -215,8 +215,7 @@ export async function GET(request: NextRequest) {
           eventType: 'dissolved',
           actorRole: 'system',
           data: {
-            reason: 'auto_dissolved_sibling_forfeited',
-            challenged_team_id: challengedTeamId,
+            reason: `${challengedTeam?.name ?? 'The challenged team'} was auto-forfeited on an earlier challenge — all remaining pending challenges were dissolved.`,
           },
           timestamp: now.toISOString(),
         })

@@ -153,6 +153,7 @@ export async function POST(
         .in('id', otherChallenges.map(c => c.id))
 
       for (const other of otherChallenges) {
+        const dissolveReason = `${challengedTeam.name} accepted another challenge.`
         const { data: otherTeam } = await adminClient
           .from('teams')
           .select('player1_id, player2_id')
@@ -182,6 +183,13 @@ export async function POST(
             },
           ])
         }
+        // Log to the challenge event timeline with the reason
+        await logChallengeEvent({
+          challengeId: other.id,
+          eventType: 'dissolved',
+          actorRole: 'system',
+          data: { reason: dissolveReason },
+        })
       }
     }
 

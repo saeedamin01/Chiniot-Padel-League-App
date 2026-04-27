@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { sendEventEmail } from '@/lib/email/events'
 import { sendPushEvent } from '@/lib/push/notify'
+import { logChallengeEvent } from '@/lib/challenges/events'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,9 +66,17 @@ export async function POST(
       action_type: 'challenge_dissolved',
       entity_type: 'challenge',
       entity_id: params.id,
-      new_value: { status: 'dissolved' },
+      new_value: { status: 'dissolved', reason: reason ?? 'Dissolved by admin.' },
       notes: 'Challenge dissolved by admin',
       created_at: now.toISOString(),
+    })
+
+    await logChallengeEvent({
+      challengeId: params.id,
+      eventType: 'dissolved',
+      actorId: user.id,
+      actorRole: 'admin',
+      data: { reason: reason ?? 'Dissolved by admin.' },
     })
 
     // Fire-and-forget dissolution emails to both teams
