@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { processForfeit } from '@/lib/ladder/engine'
 import { logChallengeEvent } from '@/lib/challenges/events'
 import { notifyAdmins } from '@/lib/notifications/service'
+import { checkLeagueLock } from '@/lib/league/lock'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,6 +19,9 @@ export async function POST(
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const lockResponse = await checkLeagueLock()
+    if (lockResponse) return lockResponse
 
     const body = await request.json()
     const { forfeitingTeamId } = body

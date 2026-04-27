@@ -9,7 +9,7 @@ import {
   Trophy, Zap, Calendar, Clock, AlertTriangle, CheckCircle,
   XCircle, RefreshCw, ArrowRight, Loader2,
   Check, X, Flag, Users, AlertCircle, Snowflake, MessageCircle,
-  TrendingUp, ChevronRight,
+  TrendingUp, ChevronRight, Lock,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -219,6 +219,7 @@ export default function DashboardPage() {
   const [venues, setVenues]                 = useState<Array<{ id: string; name: string; address?: string | null }>>([])
   const [chatLoading, setChatLoading]       = useState<string | null>(null)
   const [activeTickets, setActiveTickets]   = useState<Array<{ id: string; ticket_type: string }>>([])
+  const [leagueLocked, setLeagueLocked]     = useState(false)
 
   type OppStats = { wins: number; losses: number; played: number; recentForm: ('W' | 'L')[]; winStreak: number }
   const [opponentStatsMap, setOpponentStatsMap] = useState<Map<string, OppStats>>(new Map())
@@ -237,6 +238,28 @@ export default function DashboardPage() {
       if (data?.name) setPlayerName(data.name.split(' ')[0]) // first name only
     }
     getPlayer()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ── Fetch league lock status ──────────────────────────────────────────────
+  useEffect(() => {
+    const getLockStatus = async () => {
+      try {
+        const { data: season } = await supabase
+          .from('seasons')
+          .select('id')
+          .eq('is_active', true)
+          .single()
+        if (!season) return
+        const { data: settings } = await supabase
+          .from('league_settings')
+          .select('is_locked')
+          .eq('season_id', season.id)
+          .single()
+        if (settings) setLeagueLocked(!!(settings as any).is_locked)
+      } catch { /* ignore — column may not exist yet */ }
+    }
+    getLockStatus()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -691,6 +714,19 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
+
+      {/* ── League locked banner ── */}
+      {leagueLocked && (
+        <div className="flex items-start gap-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-2xl px-4 py-3.5">
+          <Lock className="h-5 w-5 text-red-500 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-red-700 dark:text-red-400 text-sm">League is locked</p>
+            <p className="text-red-600 dark:text-red-400/80 text-sm mt-0.5">
+              The admin has temporarily paused all challenges and result submissions. Sit tight — the league will be reopened soon.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Hero: greeting + team stats ── */}
       <DCard className="p-5">

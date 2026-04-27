@@ -6,6 +6,7 @@ import { logChallengeEvent } from '@/lib/challenges/events'
 import { sendEventEmail } from '@/lib/email/events'
 import { sendPushEvent } from '@/lib/push/notify'
 import { createNotification } from '@/lib/notifications/service'
+import { checkLeagueLock } from '@/lib/league/lock'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,6 +36,9 @@ export async function POST(
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const lockResponse = await checkLeagueLock()
+    if (lockResponse) return lockResponse
 
     const body = await request.json()
     const { acceptMode, slotIndex } = body

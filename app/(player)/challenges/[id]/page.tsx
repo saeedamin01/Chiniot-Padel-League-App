@@ -1728,7 +1728,7 @@ export default function ChallengeDetailPage() {
                   <div key={lbl} className="p-2 bg-black/20 rounded-lg">
                     <p className="text-[10px] text-slate-400 mb-1">{lbl}</p>
                     <p className="text-lg font-bold text-white">{ch ?? '—'}–{cd ?? '—'}</p>
-                    <p className="text-[9px] text-slate-500">Ch–Cd</p>
+                    <p className="text-[9px] text-slate-500 truncate">{challenge.challenging_team?.name ?? 'Ch'} – {challenge.challenged_team?.name ?? 'Cd'}</p>
                   </div>
                 ))}
               </div>

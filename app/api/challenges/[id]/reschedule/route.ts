@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { logChallengeEvent } from '@/lib/challenges/events'
+import { checkLeagueLock } from '@/lib/league/lock'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,6 +29,9 @@ export async function POST(
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const lockResponse = await checkLeagueLock()
+    if (lockResponse) return lockResponse
 
     const body = await request.json()
     const { proposedTime, proposedVenueId, reason } = body

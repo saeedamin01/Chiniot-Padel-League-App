@@ -6,6 +6,7 @@ import { createNotification } from '@/lib/notifications/service'
 import { logChallengeEvent } from '@/lib/challenges/events'
 import { sendEventEmail } from '@/lib/email/events'
 import { sendPushEvent } from '@/lib/push/notify'
+import { checkLeagueLock } from '@/lib/league/lock'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,6 +14,9 @@ export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const lockResponse = await checkLeagueLock()
+  if (lockResponse) return lockResponse
 
   const body = await request.json()
   const {

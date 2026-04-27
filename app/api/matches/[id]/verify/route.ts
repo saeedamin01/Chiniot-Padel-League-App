@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { processMatchResult } from '@/lib/ladder/engine'
 import { createNotification } from '@/lib/notifications/service'
 import { logChallengeEvent } from '@/lib/challenges/events'
+import { checkLeagueLock } from '@/lib/league/lock'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,6 +15,9 @@ export async function POST(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const lockResponse = await checkLeagueLock()
+  if (lockResponse) return lockResponse
 
   const body = await request.json()
   const { action, teamId, disputeReason } = body // action: 'verify' | 'dispute'

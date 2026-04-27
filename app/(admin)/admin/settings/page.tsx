@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { LeagueSettings, Tier, Season, Venue } from '@/types'
-import { Save, AlertTriangle, Plus, Pencil, Trash2, MapPin, Check, X, Star } from 'lucide-react'
+import { Save, AlertTriangle, Plus, Pencil, Trash2, MapPin, Check, X, Star, Lock, Unlock } from 'lucide-react'
 
 interface SettingsForm extends LeagueSettings {
   seasonName?: string
@@ -43,6 +43,10 @@ export default function SettingsPage() {
   const [showVenueForm, setShowVenueForm] = useState(false)
   const [venueSaving, setVenueSaving] = useState(false)
   const [venueMessage, setVenueMessage] = useState({ type: '', text: '' })
+
+  // League lock state
+  const [isLocked, setIsLocked] = useState(false)
+  const [lockLoading, setLockLoading] = useState(false)
 
   useEffect(() => {
     loadSettings()
@@ -82,6 +86,7 @@ export default function SettingsPage() {
           lastChallengeDate: seasonData.last_challenge_date,
           seasonStatus: seasonData.status,
         })
+        setIsLocked(!!(settingsData as any).is_locked)
       }
 
       // Get tiers
@@ -188,6 +193,25 @@ export default function SettingsPage() {
       prev.map(t => t.id === tierId ? { ...t, [field]: value } : t)
     )
     setHasChanges(true)
+  }
+
+  async function handleToggleLock() {
+    setLockLoading(true)
+    try {
+      const res = await fetch('/api/admin/lock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locked: !isLocked }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to toggle lock')
+      setIsLocked(data.is_locked)
+      setMessage({ type: 'success', text: data.is_locked ? 'League locked — all player actions are now blocked.' : 'League unlocked — players can challenge and submit results again.' })
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to toggle lock' })
+    } finally {
+      setLockLoading(false)
+    }
   }
 
   async function handleSave() {
@@ -324,6 +348,43 @@ export default function SettingsPage() {
 
         {/* Season Tab */}
         <TabsContent value="season" className="space-y-4">
+
+          {/* ── League Lock ── */}
+          <Card className={`border p-5 ${isLocked ? 'bg-red-500/10 border-red-500/40' : 'bg-slate-800/60 border-slate-700'}`}>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                {isLocked
+                  ? <Lock className="w-5 h-5 text-red-400 flex-shrink-0" />
+                  : <Unlock className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                }
+                <div>
+                  <p className="font-semibold text-white">
+                    League is currently <span className={isLocked ? 'text-red-400' : 'text-emerald-400'}>{isLocked ? 'LOCKED' : 'OPEN'}</span>
+                  </p>
+                  <p className="text-slate-400 text-sm mt-0.5">
+                    {isLocked
+                      ? 'All player write actions are blocked. Admin actions and cron jobs continue normally.'
+                      : 'Players can send challenges, submit scores, and take all normal actions.'}
+                  </p>
+                </div>
+              </div>
+              <Button
+                onClick={handleToggleLock}
+                disabled={lockLoading}
+                className={isLocked
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white flex-shrink-0'
+                  : 'bg-red-600 hover:bg-red-700 text-white flex-shrink-0'}
+              >
+                {lockLoading
+                  ? 'Saving…'
+                  : isLocked
+                    ? <><Unlock className="w-4 h-4 mr-1.5" />Unlock League</>
+                    : <><Lock className="w-4 h-4 mr-1.5" />Lock League</>
+                }
+              </Button>
+            </div>
+          </Card>
+
           <Card className="bg-slate-800/60 border-slate-700 p-6">
             <div className="space-y-4">
               <div>
