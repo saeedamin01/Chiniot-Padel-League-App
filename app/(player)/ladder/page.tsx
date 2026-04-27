@@ -53,6 +53,8 @@ interface PositionRow {
   team_id: string | null
   isMyTeam: boolean
   canChallenge: boolean
+  /** True when my team is in range but the target is locked by an active challenge */
+  lockedForMe: boolean
   requiresTicket: boolean
   ticketType: string | null
   challenges: TeamChallengeInfo[]
@@ -383,7 +385,7 @@ export default function LadderPage() {
           for (let rank = tier.min_rank; rank <= maxRank; rank++) {
             const pos = rankToPos.get(rank)
             if (!pos) {
-              positions.push({ rank, status: 'vacant', team: null, tier, team_id: null, isMyTeam: false, canChallenge: false, requiresTicket: false, ticketType: null, challenges: [], stats: null, tickets: [] })
+              positions.push({ rank, status: 'vacant', team: null, tier, team_id: null, isMyTeam: false, canChallenge: false, lockedForMe: false, requiresTicket: false, ticketType: null, challenges: [], stats: null, tickets: [] })
               continue
             }
 
@@ -435,8 +437,10 @@ export default function LadderPage() {
               ci.status === 'result_pending'
             )
             const canChallenge = !isAnyMyTeam && !isFrozen && !targetIsLocked && !!eligibleMyTeam
+            // Show "Busy" pill when my team is in range but can't challenge because the target is locked
+            const lockedForMe  = !isAnyMyTeam && !isFrozen && targetIsLocked && !!eligibleMyTeam
 
-            positions.push({ rank, status: pos.status as 'active' | 'frozen', team: pos.team, tier, team_id: pos.team_id, isMyTeam, canChallenge, requiresTicket, ticketType, challenges, stats, tickets })
+            positions.push({ rank, status: pos.status as 'active' | 'frozen', team: pos.team, tier, team_id: pos.team_id, isMyTeam, canChallenge, lockedForMe, requiresTicket, ticketType, challenges, stats, tickets })
           }
 
           return { tier, positions }
@@ -678,7 +682,12 @@ export default function LadderPage() {
 
                         {/* Right side: action + chevron */}
                         <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-                          {/* Challenge button */}
+                          {/* Challenge button / Busy indicator */}
+                          {pos.lockedForMe && (
+                            <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-200/70 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-600/50">
+                              Busy
+                            </span>
+                          )}
                           {pos.canChallenge && (
                             <Link
                               href={`/challenges?opponent=${pos.team_id}${pos.ticketType ? `&ticket=${pos.ticketType}` : ''}`}
