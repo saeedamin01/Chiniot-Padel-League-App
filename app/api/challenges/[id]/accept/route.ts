@@ -5,6 +5,7 @@ import { addHours } from 'date-fns'
 import { logChallengeEvent } from '@/lib/challenges/events'
 import { sendEventEmail } from '@/lib/email/events'
 import { sendPushEvent } from '@/lib/push/notify'
+import { createNotification } from '@/lib/notifications/service'
 
 export const dynamic = 'force-dynamic'
 
@@ -156,32 +157,22 @@ export async function POST(
         const dissolveReason = `${challengedTeam.name} accepted another challenge.`
         const { data: otherTeam } = await adminClient
           .from('teams')
-          .select('player1_id, player2_id')
+          .select('player1_id, player2_id, name')
           .eq('id', other.challenging_team_id)
           .single()
         if (otherTeam) {
-          await adminClient.from('notifications').insert([
-            {
-              player_id: otherTeam.player1_id,
-              team_id: other.challenging_team_id,
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+          for (const playerId of [otherTeam.player1_id, otherTeam.player2_id].filter(Boolean)) {
+            await createNotification({
+              playerId,
+              teamId: other.challenging_team_id,
               type: 'challenge_dissolved',
-              title: 'Challenge Dissolved',
-              message: `Your challenge to ${challengedTeam.name} was dissolved — they accepted another challenge.`,
-              action_url: `/challenges/${other.id}`,
-              is_read: false,
-              email_sent: false,
-            },
-            {
-              player_id: otherTeam.player2_id,
-              team_id: other.challenging_team_id,
-              type: 'challenge_dissolved',
-              title: 'Challenge Dissolved',
-              message: `Your challenge to ${challengedTeam.name} was dissolved — they accepted another challenge.`,
-              action_url: `/challenges/${other.id}`,
-              is_read: false,
-              email_sent: false,
-            },
-          ])
+              title: '❌ Challenge Dissolved',
+              message: `Your challenge to ${challengedTeam.name} was dissolved — ${challengedTeam.name} accepted another challenge first.`,
+              actionUrl: `${appUrl}/challenges/${other.id}`,
+              sendEmail: true,
+            })
+          }
         }
         // Log to the challenge event timeline with the reason
         await logChallengeEvent({

@@ -2,7 +2,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { processForfeit } from '@/lib/ladder/engine'
 import { logChallengeEvent } from '@/lib/challenges/events'
-import { notifyAdmins } from '@/lib/notifications/service'
+import { createNotification, notifyAdmins } from '@/lib/notifications/service'
 
 export const dynamic = 'force-dynamic'
 
@@ -177,28 +177,18 @@ export async function GET(request: NextRequest) {
           .from('teams').select('player1_id, player2_id, name').eq('id', other.challenging_team_id).single()
 
         if (otherChallengingTeam) {
-          await adminClient.from('notifications').insert([
-            {
-              player_id: otherChallengingTeam.player1_id,
-              team_id: other.challenging_team_id,
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+          for (const playerId of [otherChallengingTeam.player1_id, otherChallengingTeam.player2_id].filter(Boolean)) {
+            await createNotification({
+              playerId,
+              teamId: other.challenging_team_id,
               type: 'challenge_dissolved',
-              title: 'Challenge Dissolved',
-              message: `Your challenge to ${challengedTeam?.name ?? 'the team'} has been dissolved. They were already auto-forfeited on an earlier challenge.`,
-              action_url: `/challenges/${other.id}`,
-              is_read: false,
-              email_sent: false,
-            },
-            {
-              player_id: otherChallengingTeam.player2_id,
-              team_id: other.challenging_team_id,
-              type: 'challenge_dissolved',
-              title: 'Challenge Dissolved',
-              message: `Your challenge to ${challengedTeam?.name ?? 'the team'} has been dissolved. They were already auto-forfeited on an earlier challenge.`,
-              action_url: `/challenges/${other.id}`,
-              is_read: false,
-              email_sent: false,
-            },
-          ])
+              title: '❌ Challenge Dissolved',
+              message: `Your challenge to ${challengedTeam?.name ?? 'the team'} was dissolved — they were auto-forfeited on an earlier challenge.`,
+              actionUrl: `${appUrl}/challenges/${other.id}`,
+              sendEmail: true,
+            })
+          }
         }
 
         await adminClient.from('audit_log').insert({
