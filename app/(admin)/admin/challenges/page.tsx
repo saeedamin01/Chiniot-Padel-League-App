@@ -557,40 +557,146 @@ export default function ChallengesPage() {
                   )}
                 </div>
 
-                {/* Both score versions */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="p-3 bg-slate-700/40 border border-slate-600 rounded-lg space-y-2">
-                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                      Original — {dm.reported_by_team_id === chId ? dm.challenging_team_name : dm.challenged_team_name}
-                    </p>
-                    <div className="flex gap-3 text-sm text-slate-200 flex-wrap">
-                      <span>S1: {dm.original.set1_challenger ?? '—'}–{dm.original.set1_challenged ?? '—'}</span>
-                      <span>S2: {dm.original.set2_challenger ?? '—'}–{dm.original.set2_challenged ?? '—'}</span>
-                      {dm.original.supertiebreak_challenger != null && (
-                        <span>TB: {dm.original.supertiebreak_challenger}–{dm.original.supertiebreak_challenged}</span>
+                {/* What's in dispute — plain-English summary */}
+                {(() => {
+                  const winnerContested = dm.original.winner_team_id !== dm.disputed.winner_team_id
+                  const diffSets: string[] = []
+                  if (dm.original.set1_challenger !== dm.disputed.set1_challenger || dm.original.set1_challenged !== dm.disputed.set1_challenged) diffSets.push('Set 1')
+                  if (dm.original.set2_challenger !== dm.disputed.set2_challenger || dm.original.set2_challenged !== dm.disputed.set2_challenged) diffSets.push('Set 2')
+                  const origTBch = dm.original.supertiebreak_challenger ?? null
+                  const origTBcd = dm.original.supertiebreak_challenged ?? null
+                  const dispTBch = dm.disputed.supertiebreak_challenger ?? null
+                  const dispTBcd = dm.disputed.supertiebreak_challenged ?? null
+                  if (origTBch !== dispTBch || origTBcd !== dispTBcd) diffSets.push('Tiebreak')
+                  const submitter = dm.reported_by_team_id === chId ? dm.challenging_team_name : dm.challenged_team_name
+                  const counter = dm.reported_by_team_id === chId ? dm.challenged_team_name : dm.challenging_team_name
+                  return (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/8 px-4 py-3 space-y-1.5">
+                      <p className="text-xs font-semibold text-amber-300 uppercase tracking-wide">What happened</p>
+                      <p className="text-sm text-slate-200">
+                        <span className="font-medium text-white">{submitter}</span> submitted the score.{' '}
+                        <span className="font-medium text-white">{counter}</span> disputed it.
+                      </p>
+                      {winnerContested ? (
+                        <p className="text-sm text-red-300">
+                          ⚠️ <span className="font-medium">Teams disagree on who won</span> — {dm.original.winner_name} (original) vs {dm.disputed.winner_name} (counter).
+                        </p>
+                      ) : (
+                        <p className="text-sm text-slate-300">
+                          ✓ Both agree <span className="font-medium text-white">{dm.original.winner_name}</span> won, but dispute the{' '}
+                          {diffSets.length > 0 ? diffSets.join(' and ') + ' score' + (diffSets.length > 1 ? 's' : '') : 'exact scores'}.
+                        </p>
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs text-emerald-400">
-                      <Trophy className="h-3 w-3" /> {dm.original.winner_name} wins
-                    </div>
-                  </div>
+                  )
+                })()}
 
-                  <div className="p-3 bg-orange-500/10 border border-orange-500/30 rounded-lg space-y-2">
-                    <p className="text-xs font-semibold text-orange-400 uppercase tracking-wide">
-                      Counter — {dm.reported_by_team_id === chId ? dm.challenged_team_name : dm.challenging_team_name}
-                    </p>
-                    <div className="flex gap-3 text-sm text-white flex-wrap">
-                      <span>S1: {dm.disputed.set1_challenger}–{dm.disputed.set1_challenged}</span>
-                      <span>S2: {dm.disputed.set2_challenger}–{dm.disputed.set2_challenged}</span>
-                      {dm.disputed.supertiebreak_challenger != null && (
-                        <span>TB: {dm.disputed.supertiebreak_challenger}–{dm.disputed.supertiebreak_challenged}</span>
-                      )}
+                {/* Score comparison table — diff highlighted */}
+                {(() => {
+                  const submitter = dm.reported_by_team_id === chId ? dm.challenging_team_name : dm.challenged_team_name
+                  const counter = dm.reported_by_team_id === chId ? dm.challenged_team_name : dm.challenging_team_name
+                  const sets = [
+                    {
+                      label: 'Set 1',
+                      origCh: dm.original.set1_challenger, origCd: dm.original.set1_challenged,
+                      dispCh: dm.disputed.set1_challenger, dispCd: dm.disputed.set1_challenged,
+                    },
+                    {
+                      label: 'Set 2',
+                      origCh: dm.original.set2_challenger, origCd: dm.original.set2_challenged,
+                      dispCh: dm.disputed.set2_challenger, dispCd: dm.disputed.set2_challenged,
+                    },
+                    {
+                      label: 'Tiebreak',
+                      origCh: dm.original.supertiebreak_challenger ?? null,
+                      origCd: dm.original.supertiebreak_challenged ?? null,
+                      dispCh: dm.disputed.supertiebreak_challenger ?? null,
+                      dispCd: dm.disputed.supertiebreak_challenged ?? null,
+                    },
+                  ].filter(s => s.origCh != null || s.dispCh != null)
+
+                  const winnerContested = dm.original.winner_team_id !== dm.disputed.winner_team_id
+
+                  return (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-700">
+                            <th className="text-left text-[10px] text-slate-500 font-medium pb-2 pr-4 w-20"></th>
+                            <th className="text-center text-[10px] text-slate-400 font-semibold pb-2 px-3">
+                              {dm.challenging_team_name}
+                            </th>
+                            <th className="text-center text-[10px] text-slate-400 font-semibold pb-2 px-3">
+                              {dm.challenged_team_name}
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sets.map(({ label, origCh, origCd, dispCh, dispCd }) => {
+                            const differs = origCh !== dispCh || origCd !== dispCd
+                            return (
+                              <tr key={label} className="border-b border-slate-700/50">
+                                <td className="text-[10px] text-slate-500 py-2 pr-4 font-medium">{label}</td>
+                                <td className="py-2 px-3 text-center">
+                                  {/* Challenger score for this set */}
+                                  <div className="space-y-0.5">
+                                    <div className="text-slate-300 text-xs">{submitter.split(' ')[0]} submitted:</div>
+                                    <div className={`font-mono font-semibold text-sm ${differs ? 'text-amber-300' : 'text-white'}`}>
+                                      {origCh ?? '—'}
+                                    </div>
+                                    {differs && (
+                                      <>
+                                        <div className="text-slate-500 text-xs">{counter.split(' ')[0]} says:</div>
+                                        <div className="font-mono font-semibold text-sm text-red-300">{dispCh ?? '—'}</div>
+                                      </>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-2 px-3 text-center">
+                                  <div className="space-y-0.5">
+                                    <div className="text-slate-300 text-xs">{submitter.split(' ')[0]} submitted:</div>
+                                    <div className={`font-mono font-semibold text-sm ${differs ? 'text-amber-300' : 'text-white'}`}>
+                                      {origCd ?? '—'}
+                                    </div>
+                                    {differs && (
+                                      <>
+                                        <div className="text-slate-500 text-xs">{counter.split(' ')[0]} says:</div>
+                                        <div className="font-mono font-semibold text-sm text-red-300">{dispCd ?? '—'}</div>
+                                      </>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                          {/* Winner row */}
+                          <tr>
+                            <td className="text-[10px] text-slate-500 pt-3 pr-4 font-medium">Winner</td>
+                            <td colSpan={2} className="pt-3 px-3">
+                              {winnerContested ? (
+                                <div className="flex items-center gap-4 flex-wrap">
+                                  <span className="flex items-center gap-1.5 text-xs text-amber-300">
+                                    <Trophy className="h-3 w-3" />
+                                    {submitter.split(' ')[0]} says: <span className="font-semibold">{dm.original.winner_name}</span>
+                                  </span>
+                                  <span className="text-slate-600">|</span>
+                                  <span className="flex items-center gap-1.5 text-xs text-red-300">
+                                    <Trophy className="h-3 w-3" />
+                                    {counter.split(' ')[0]} says: <span className="font-semibold">{dm.disputed.winner_name}</span>
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+                                  <Trophy className="h-3 w-3" /> Both agree: <span className="font-semibold">{dm.original.winner_name}</span>
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs text-emerald-400">
-                      <Trophy className="h-3 w-3" /> {dm.disputed.winner_name} wins
-                    </div>
-                  </div>
-                </div>
+                  )
+                })()}
 
                 {/* Admin final score form */}
                 <div className="space-y-3">
