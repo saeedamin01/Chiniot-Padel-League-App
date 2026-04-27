@@ -19,12 +19,14 @@ CRON_SECRET="your_cron_secret"      # ← change this (must match .env CRON_SECR
 CRON_HEADER="Authorization: Bearer $CRON_SECRET"
 
 # Cron schedule explanation:
-#   result-verify   — every 15 minutes  (auto-verifies match results after deadline)
-#   challenge-forfeit — every hour       (forfeits overdue challenges)
-#   freeze-drops    — daily at 2am       (applies weekly ladder drops for frozen teams)
+#   result-verify     — every 15 minutes  (auto-verifies match results after deadline)
+#   time-confirm      — every 15 minutes  (auto-confirms match times after deadline)
+#   challenge-forfeit — every hour        (forfeits overdue challenges)
+#   freeze-drops      — daily at 2am      (applies weekly ladder drops for frozen teams)
 
 CRON_JOBS=(
   "*/15 * * * * curl -s -H \"$CRON_HEADER\" $APP_URL/api/cron/result-verify >> /var/log/cpl-cron.log 2>&1"
+  "*/15 * * * * curl -s -H \"$CRON_HEADER\" $APP_URL/api/cron/time-confirm >> /var/log/cpl-cron.log 2>&1"
   "0 * * * *    curl -s -H \"$CRON_HEADER\" $APP_URL/api/cron/challenge-forfeit >> /var/log/cpl-cron.log 2>&1"
   "0 2 * * *    curl -s -H \"$CRON_HEADER\" $APP_URL/api/cron/freeze-drops >> /var/log/cpl-cron.log 2>&1"
 )

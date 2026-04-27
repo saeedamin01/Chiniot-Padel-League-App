@@ -106,6 +106,10 @@ export async function POST(
     const confirmingTeam = isOnChallengingTeam ? challengingTeam : challengedTeam
     const notifyTeam     = isOnChallengingTeam ? challengedTeam  : challengingTeam
 
+    // Was this triggered by an expired deadline (auto-confirm via page-load fire-and-forget)?
+    const deadlineExpiredForConfirm = !!(challenge.confirmation_deadline &&
+      new Date(challenge.confirmation_deadline) <= now)
+
     if (action === 'confirm') {
       // Move to scheduled — match is officially on the books
       const { data: updated, error: updateError } = await adminClient
@@ -130,25 +134,33 @@ export async function POST(
           })
         : 'the agreed time'
 
-      // Notify the other team
-      if (notifyTeam) {
+      // Notify both teams
+      const teamsToNotify = [
+        { team: notifyTeam,      teamId: notifyTeam?.id },
+        { team: confirmingTeam,  teamId: confirmingTeam?.id },
+      ]
+      for (const { team } of teamsToNotify) {
+        if (!team) continue
+        const msg = deadlineExpiredForConfirm
+          ? `Your match has been automatically confirmed for ${formattedTime} — the confirmation window expired.`
+          : `${confirmingTeam?.name ?? 'Opponent'} confirmed the match for ${formattedTime}. Good luck!`
         await adminClient.from('notifications').insert([
           {
-            player_id: notifyTeam.player1_id,
-            team_id: notifyTeam.id,
+            player_id: team.player1_id,
+            team_id: team.id,
             type: 'challenge_scheduled',
-            title: 'Match Confirmed',
-            message: `${confirmingTeam?.name ?? 'Opponent'} confirmed the match for ${formattedTime}. Good luck!`,
+            title: deadlineExpiredForConfirm ? 'Match Auto-Confirmed' : 'Match Confirmed',
+            message: msg,
             action_url: `/challenges/${params.id}`,
             is_read: false,
             email_sent: false,
           },
           {
-            player_id: notifyTeam.player2_id,
-            team_id: notifyTeam.id,
+            player_id: team.player2_id,
+            team_id: team.id,
             type: 'challenge_scheduled',
-            title: 'Match Confirmed',
-            message: `${confirmingTeam?.name ?? 'Opponent'} confirmed the match for ${formattedTime}. Good luck!`,
+            title: deadlineExpiredForConfirm ? 'Match Auto-Confirmed' : 'Match Confirmed',
+            message: msg,
             action_url: `/challenges/${params.id}`,
             is_read: false,
             email_sent: false,
@@ -157,22 +169,26 @@ export async function POST(
       }
 
       await adminClient.from('audit_log').insert({
-        actor_id: user.id,
-        actor_email: user.email,
-        action_type: 'challenge_confirmed',
+        actor_id: deadlineExpiredForConfirm ? null : user.id,
+        actor_email: deadlineExpiredForConfirm ? 'system' : user.email,
+        action_type: deadlineExpiredForConfirm ? 'challenge_auto_confirmed' : 'challenge_confirmed',
         entity_type: 'challenge',
         entity_id: params.id,
         new_value: { status: 'scheduled', match_date: challenge.confirmed_time },
+        notes: deadlineExpiredForConfirm ? 'Match time auto-confirmed: confirmation deadline expired' : undefined,
         created_at: now.toISOString(),
       })
 
       await logChallengeEvent({
         challengeId: params.id,
-        eventType: 'time_confirmed',
-        actorId: user.id,
-        actorRole: 'player',
-        actorName: confirmingTeam?.name ?? 'Unknown',
-        data: { confirmed_time: challenge.confirmed_time },
+        eventType: deadlineExpiredForConfirm ? 'time_auto_confirmed' : 'time_confirmed',
+        actorId: deadlineExpiredForConfirm ? undefined : user.id,
+        actorRole: deadlineExpiredForConfirm ? 'system' : 'player',
+        actorName: deadlineExpiredForConfirm ? undefined : (confirmingTeam?.name ?? 'Unknown'),
+        data: {
+          confirmed_time: challenge.confirmed_time,
+          ...(deadlineExpiredForConfirm ? { reason: 'Confirmation window expired — auto-confirmed by system.' } : {}),
+        },
       })
 
       return NextResponse.json({ challenge: updated })
