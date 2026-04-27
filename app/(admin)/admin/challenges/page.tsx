@@ -401,11 +401,31 @@ export default function ChallengesPage() {
     }
   }
 
-  async function handleAdminResolveDispute(resultId: string, challengeId: string) {
+  function computeWinnerId(form: { s1ch: string; s1cd: string; s2ch: string; s2cd: string; tbch: string; tbcd: string }, chId: string, cdId: string): string {
+    const s1ch = parseInt(form.s1ch) || 0
+    const s1cd = parseInt(form.s1cd) || 0
+    const s2ch = parseInt(form.s2ch) || 0
+    const s2cd = parseInt(form.s2cd) || 0
+    const challSetsWon = (s1ch > s1cd ? 1 : 0) + (s2ch > s2cd ? 1 : 0)
+    const chdSetsWon = (s1cd > s1ch ? 1 : 0) + (s2cd > s2ch ? 1 : 0)
+    if (challSetsWon > chdSetsWon) return chId
+    if (chdSetsWon > challSetsWon) return cdId
+    // Tied sets — supertiebreak decides
+    const tbch = form.tbch ? parseInt(form.tbch) : null
+    const tbcd = form.tbcd ? parseInt(form.tbcd) : null
+    if (tbch != null && tbcd != null && tbch !== tbcd) return tbch > tbcd ? chId : cdId
+    return '' // can't determine yet
+  }
+
+  async function handleAdminResolveDispute(resultId: string, challengeId: string, chId: string, cdId: string) {
     const form = disputeForms[resultId]
     if (!form) return
-    if (!form.s1ch || !form.s1cd || !form.s2ch || !form.s2cd || !form.winnerTeamId) {
-      alert('Please fill in all scores and select a winner.'); return
+    if (!form.s1ch || !form.s1cd || !form.s2ch || !form.s2cd) {
+      alert('Please fill in Set 1 and Set 2 scores.'); return
+    }
+    const winnerTeamId = computeWinnerId(form, chId, cdId)
+    if (!winnerTeamId) {
+      alert('Could not determine a winner from the scores — check the scores and add a supertiebreak if sets are split.'); return
     }
 
     setDisputeResolveLoading(resultId)
@@ -419,7 +439,7 @@ export default function ChallengesPage() {
           set2Challenger: parseInt(form.s2ch), set2Challenged: parseInt(form.s2cd),
           supertiebreakChallenger: form.tbch ? parseInt(form.tbch) : null,
           supertiebreakChallenged: form.tbcd ? parseInt(form.tbcd) : null,
-          winnerTeamId: form.winnerTeamId,
+          winnerTeamId,
           adminNote: form.note || null,
         }),
       })
@@ -575,37 +595,72 @@ export default function ChallengesPage() {
                 {/* Admin final score form */}
                 <div className="space-y-3">
                   <p className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Set Final Score</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {[
-                      { label: 'Set 1 Ch', key: 's1ch' }, { label: 'Set 1 Cd', key: 's1cd' },
-                      { label: 'Set 2 Ch', key: 's2ch' }, { label: 'Set 2 Cd', key: 's2cd' },
-                      { label: 'TB Ch', key: 'tbch' }, { label: 'TB Cd', key: 'tbcd' },
-                    ].map(({ label, key }) => (
-                      <div key={key}>
-                        <label className="text-[10px] text-slate-500 block mb-1">{label}</label>
-                        <input
-                          type="number" min="0" max="99"
-                          value={(form as any)[key]}
-                          onChange={e => setForm({ [key]: e.target.value } as any)}
-                          placeholder="—"
-                          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-sm text-center focus:outline-none focus:border-orange-500 h-9"
-                        />
-                      </div>
-                    ))}
+
+                  {/* Score entry table — columns = teams, rows = sets */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr>
+                          <th className="text-left text-[10px] text-slate-500 font-medium pb-2 w-20"></th>
+                          <th className="text-center text-[10px] text-slate-300 font-semibold pb-2 px-1">
+                            {dm.challenging_team_name}
+                            <span className="ml-1 text-slate-500 font-normal">(challenger)</span>
+                          </th>
+                          <th className="text-center text-[10px] text-slate-300 font-semibold pb-2 px-1">
+                            {dm.challenged_team_name}
+                            <span className="ml-1 text-slate-500 font-normal">(challenged)</span>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="space-y-1">
+                        {[
+                          { label: 'Set 1', chKey: 's1ch', cdKey: 's1cd' },
+                          { label: 'Set 2', chKey: 's2ch', cdKey: 's2cd' },
+                          { label: 'Tiebreak', chKey: 'tbch', cdKey: 'tbcd' },
+                        ].map(({ label, chKey, cdKey }) => (
+                          <tr key={label}>
+                            <td className="text-[10px] text-slate-500 py-1 pr-2">{label}</td>
+                            <td className="px-1 py-1">
+                              <input
+                                type="number" min="0" max="99"
+                                value={(form as any)[chKey]}
+                                onChange={e => setForm({ [chKey]: e.target.value } as any)}
+                                placeholder="—"
+                                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-sm text-center focus:outline-none focus:border-orange-500 h-9"
+                              />
+                            </td>
+                            <td className="px-1 py-1">
+                              <input
+                                type="number" min="0" max="99"
+                                value={(form as any)[cdKey]}
+                                onChange={e => setForm({ [cdKey]: e.target.value } as any)}
+                                placeholder="—"
+                                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-sm text-center focus:outline-none focus:border-orange-500 h-9"
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
 
-                  <div>
-                    <label className="text-[10px] text-slate-500 block mb-1">Winner</label>
-                    <select
-                      value={form.winnerTeamId}
-                      onChange={e => setForm({ winnerTeamId: e.target.value })}
-                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500 h-10"
-                    >
-                      <option value="">Select winner…</option>
-                      <option value={chId}>{dm.challenging_team_name}</option>
-                      <option value={cdId}>{dm.challenged_team_name}</option>
-                    </select>
-                  </div>
+                  {/* Auto-computed winner */}
+                  {(() => {
+                    const autoWinnerId = computeWinnerId(form, chId, cdId)
+                    const autoWinnerName = autoWinnerId === chId ? dm.challenging_team_name : autoWinnerId === cdId ? dm.challenged_team_name : null
+                    return autoWinnerName ? (
+                      <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
+                        <Trophy className="h-4 w-4 text-emerald-400 shrink-0" />
+                        <span className="text-sm text-emerald-300 font-medium">{autoWinnerName} wins</span>
+                        <span className="text-xs text-slate-500">(auto-calculated from scores)</span>
+                      </div>
+                    ) : (form.s1ch && form.s1cd && form.s2ch && form.s2cd) ? (
+                      <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                        <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+                        <span className="text-xs text-amber-300">Sets are tied — enter tiebreak scores to determine winner</span>
+                      </div>
+                    ) : null
+                  })()}
 
                   <div>
                     <label className="text-[10px] text-slate-500 block mb-1">Admin note (logged)</label>
@@ -619,8 +674,8 @@ export default function ChallengesPage() {
                   </div>
 
                   <Button
-                    onClick={() => handleAdminResolveDispute(dm.result_id, dm.challenge_id)}
-                    disabled={isLoading || !form.winnerTeamId}
+                    onClick={() => handleAdminResolveDispute(dm.result_id, dm.challenge_id, chId, cdId)}
+                    disabled={isLoading || !form.s1ch || !form.s1cd || !form.s2ch || !form.s2cd || !computeWinnerId(form, chId, cdId)}
                     className="w-full bg-orange-500 hover:bg-orange-600 h-10"
                   >
                     {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Check className="h-4 w-4 mr-2" />}
