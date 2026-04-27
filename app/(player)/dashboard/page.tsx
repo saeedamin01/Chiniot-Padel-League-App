@@ -1353,6 +1353,29 @@ export default function DashboardPage() {
                       {matchup(c)}
                     </p>
                     <OppContact c={c} />
+                    {c.match_result && !c.match_result.disputed_at && (() => {
+                      const mr = c.match_result
+                      const isWinnerChallenger = mr.winner_team_id === c.challenging_team_id
+                      const winnerName = isWinnerChallenger ? c.challenging_team.name : c.challenged_team.name
+                      const sets = [
+                        isWinnerChallenger
+                          ? `${mr.set1_challenger}-${mr.set1_challenged}`
+                          : `${mr.set1_challenged}-${mr.set1_challenger}`,
+                        isWinnerChallenger
+                          ? `${mr.set2_challenger}-${mr.set2_challenged}`
+                          : `${mr.set2_challenged}-${mr.set2_challenger}`,
+                      ]
+                      if (mr.supertiebreak_challenger != null && mr.supertiebreak_challenged != null) {
+                        sets.push(isWinnerChallenger
+                          ? `[${mr.supertiebreak_challenger}-${mr.supertiebreak_challenged}]`
+                          : `[${mr.supertiebreak_challenged}-${mr.supertiebreak_challenger}]`)
+                      }
+                      return (
+                        <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mt-0.5">
+                          {winnerName} won · <span className="font-mono">{sets.join(', ')}</span>
+                        </p>
+                      )
+                    })()}
                     <p className="text-sm text-slate-500 mt-0.5">
                       {c.match_result?.disputed_at
                         ? 'They disputed your score — view the challenge to accept or escalate'
