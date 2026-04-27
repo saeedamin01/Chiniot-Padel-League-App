@@ -69,6 +69,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Same-day check — only one slot per calendar day
+    const slotDays = slots30.map(d => d.toLocaleDateString('en-GB'))
+    if (new Set(slotDays).size < slots30.length) {
+      return NextResponse.json(
+        { error: 'Each slot must be on a different day — you can only propose one time per day.' },
+        { status: 400 }
+      )
+    }
+
     // Check if current user is on challenging team
     const { data: challengingTeam } = await supabase
       .from('teams')

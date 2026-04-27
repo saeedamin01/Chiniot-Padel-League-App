@@ -299,6 +299,13 @@ export default function ChallengesPage() {
       return 'Each time slot must be unique — remove the duplicate.'
     }
 
+    // Same-day check — only one slot per calendar day allowed
+    const days = slots.map(d => d.toLocaleDateString('en-GB'))
+    const uniqueDays = new Set(days)
+    if (uniqueDays.size < slots.length) {
+      return 'Each slot must be on a different day — you can only propose one time per day.'
+    }
+
     const { eveningCount, weekendCount, eveningStartHour, eveningStartMinute, eveningEndHour } = slotReqs
     const startMins = eveningStartHour * 60 + (eveningStartMinute ?? 0)
     const endMins   = eveningEndHour * 60
