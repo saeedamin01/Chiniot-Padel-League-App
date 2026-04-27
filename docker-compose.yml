@@ -1,5 +1,3 @@
-version: '3.8'
-
 # ─────────────────────────────────────────────────────────────────────────────
 # CPL App
 # Supabase runs in a separate compose stack (infra/supabase/).
