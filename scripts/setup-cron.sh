@@ -1,43 +1,50 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
 # CPL Cron Job Setup
-# Run this once on the Hetzner server to register the three cron jobs.
+# Run this on the Hetzner server to register (or re-register) all cron jobs.
+# Safe to re-run — it always writes a fresh crontab, no duplicates.
 #
 # Prerequisites:
 #   - The app must be running (docker compose up -d)
-#   - CRON_SECRET must be set in your .env file
-#   - Edit the APP_URL and CRON_SECRET values below before running
+#   - .env must exist in the project root with CRON_SECRET set
 #
 # Usage:
-#   chmod +x scripts/setup-cron.sh
-#   ./scripts/setup-cron.sh
+#   bash scripts/setup-cron.sh
 # ─────────────────────────────────────────────────────────────────────────────
+set -e
+cd "$(dirname "$0")/.."
 
-APP_URL="https://yourdomain.com"    # ← change this
-CRON_SECRET="your_cron_secret"      # ← change this (must match .env CRON_SECRET)
+# Read CRON_SECRET from .env
+if [ ! -f ".env" ]; then
+  echo "❌ .env not found. Run from the project root or check your setup."
+  exit 1
+fi
 
-CRON_HEADER="Authorization: Bearer $CRON_SECRET"
+CRON_SECRET=$(grep -E '^CRON_SECRET=' .env | cut -d '=' -f2- | tr -d '"' | tr -d "'")
+if [ -z "$CRON_SECRET" ]; then
+  echo "❌ CRON_SECRET not found in .env"
+  exit 1
+fi
+
+APP_URL="http://localhost:3000"
+HDR="Authorization: Bearer $CRON_SECRET"
 
 # Cron schedule explanation:
-#   result-verify     — every 15 minutes  (auto-verifies match results after deadline)
-#   time-confirm      — every 15 minutes  (auto-confirms match times after deadline)
-#   challenge-forfeit — every hour        (forfeits overdue challenges)
-#   freeze-drops      — daily at 2am      (applies weekly ladder drops for frozen teams)
+#   result-verify     — every minute   (auto-verifies match results after deadline)
+#   time-confirm      — every minute   (auto-confirms match times after deadline)
+#   challenge-forfeit — every minute   (forfeits overdue challenges)
+#   freeze-drops      — daily at 2am   (applies weekly ladder drops for frozen teams)
+#   ladder-snapshot   — daily at 2:15am (records ladder state for rank-gain tracking)
 
-CRON_JOBS=(
-  "*/15 * * * * curl -s -H \"$CRON_HEADER\" $APP_URL/api/cron/result-verify >> /var/log/cpl-cron.log 2>&1"
-  "*/15 * * * * curl -s -H \"$CRON_HEADER\" $APP_URL/api/cron/time-confirm >> /var/log/cpl-cron.log 2>&1"
-  "0 * * * *    curl -s -H \"$CRON_HEADER\" $APP_URL/api/cron/challenge-forfeit >> /var/log/cpl-cron.log 2>&1"
-  "0 2 * * *    curl -s -H \"$CRON_HEADER\" $APP_URL/api/cron/freeze-drops >> /var/log/cpl-cron.log 2>&1"
-)
-
-# Install to system crontab
-(crontab -l 2>/dev/null; printf '%s\n' "${CRON_JOBS[@]}") | crontab -
+crontab - << EOF
+* * * * * curl -sf -H "$HDR" $APP_URL/api/cron/result-verify >> /var/log/cpl-cron.log 2>&1
+* * * * * curl -sf -H "$HDR" $APP_URL/api/cron/time-confirm >> /var/log/cpl-cron.log 2>&1
+* * * * * curl -sf -H "$HDR" $APP_URL/api/cron/challenge-forfeit >> /var/log/cpl-cron.log 2>&1
+0 2 * * * curl -sf -H "$HDR" $APP_URL/api/cron/freeze-drops >> /var/log/cpl-cron.log 2>&1
+15 2 * * * curl -sf -H "$HDR" $APP_URL/api/cron/ladder-snapshot >> /var/log/cpl-cron.log 2>&1
+EOF
 
 echo "✅ Cron jobs installed. Current crontab:"
 crontab -l
-
 echo ""
-echo "Logs will be written to: /var/log/cpl-cron.log"
-echo "To check logs: tail -f /var/log/cpl-cron.log"
-echo "To edit cron jobs later: crontab -e"
+echo "Logs: tail -f /var/log/cpl-cron.log"
