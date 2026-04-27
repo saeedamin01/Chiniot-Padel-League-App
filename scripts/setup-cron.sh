@@ -36,13 +36,16 @@ HDR="Authorization: Bearer $CRON_SECRET"
 #   freeze-drops      — daily at 2am   (applies weekly ladder drops for frozen teams)
 #   ladder-snapshot   — daily at 2:15am (records ladder state for rank-gain tracking)
 
-crontab - << EOF
+TMPFILE=$(mktemp)
+cat > "$TMPFILE" << ENDOFCRON
 * * * * * curl -sf -H "$HDR" $APP_URL/api/cron/result-verify >> /var/log/cpl-cron.log 2>&1
 * * * * * curl -sf -H "$HDR" $APP_URL/api/cron/time-confirm >> /var/log/cpl-cron.log 2>&1
 * * * * * curl -sf -H "$HDR" $APP_URL/api/cron/challenge-forfeit >> /var/log/cpl-cron.log 2>&1
 0 2 * * * curl -sf -H "$HDR" $APP_URL/api/cron/freeze-drops >> /var/log/cpl-cron.log 2>&1
 15 2 * * * curl -sf -H "$HDR" $APP_URL/api/cron/ladder-snapshot >> /var/log/cpl-cron.log 2>&1
-EOF
+ENDOFCRON
+crontab "$TMPFILE"
+rm "$TMPFILE"
 
 echo "✅ Cron jobs installed. Current crontab:"
 crontab -l
