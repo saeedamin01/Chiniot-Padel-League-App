@@ -3,6 +3,7 @@
 # Supabase runs in a separate compose stack (infra/supabase/).
 # Both stacks share the "cpl-network" Docker network so the app can
 # reach Supabase services by container name.
+# nginx on the host handles SSL termination and proxies to port 3000.
 # ─────────────────────────────────────────────────────────────────────────────
 
 networks:
@@ -20,6 +21,8 @@ services:
     restart: unless-stopped
     networks:
       - cpl-network
+    ports:
+      - "3000:3000"
     environment:
       - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
@@ -31,46 +34,9 @@ services:
       - SMTP_FROM=${SMTP_FROM}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
       - NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
       - CRON_SECRET=${CRON_SECRET}
     deploy:
       resources:
         limits:
           memory: 512M
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.cpl-app.rule=Host(`${DOMAIN}`)"
-      - "traefik.http.routers.cpl-app.entrypoints=websecure"
-      - "traefik.http.routers.cpl-app.tls.certresolver=myresolver"
-      - "traefik.http.services.cpl-app.loadbalancer.server.port=3000"
-
-  traefik:
-    image: traefik:v2.10
-    restart: unless-stopped
-    networks:
-      - cpl-network
-    command:
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.websecure.address=:443"
-      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
-      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
-      - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
-      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
-      - "--certificatesresolvers.myresolver.acme.email=${ACME_EMAIL}"
-      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
-      - "letsencrypt:/letsencrypt"
-
-volumes:
-  letsencrypt:
